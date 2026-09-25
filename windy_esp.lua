@@ -1,6 +1,8 @@
 -- Windy ESP — Rimuru UI Edition v1.9.6 (OPTIMIZED - Door/Freeze Pod lag fixes)
 -- For Windy Bee Simulator / FTF
 -- v1.9.6: Full optimization - Door ESP & Freeze Pod ESP no longer lag
+-- v1.9.6b: Ragdoll Tracker bar moved inside panel
+-- v1.9.6c: Fixed door throttle bug + removed frame throttle (smooth doors)
 
 local RIM_URL = "https://raw.githubusercontent.com/kherbyy/rem-ui/main/rem.lua"
 local UI = _G.Rimuru or _G.Rem
@@ -417,13 +419,13 @@ local function EnsureTrackerSlot(idx)
             obj.Size = 14; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 7
         elseif slotInGroup == 3 then
             obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.2
-            obj.Color = Color3.fromRGB(20, 20, 25); obj.ZIndex = 0
+            obj.Color = Color3.fromRGB(20, 20, 25); obj.ZIndex = 1
         elseif slotInGroup == 4 then
             obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.4
-            obj.Color = Color3.fromRGB(255, 180, 0); obj.ZIndex = 1
+            obj.Color = Color3.fromRGB(255, 180, 0); obj.ZIndex = 2
         else
             obj = Drawing.new("Square"); obj.Filled = false; obj.Thickness = 1
-            obj.Transparency = 0.5; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 0
+            obj.Transparency = 0.5; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 3
         end
         obj.Visible = false
         table.insert(RagdollTracker.drawn, obj)
@@ -450,9 +452,9 @@ local function RenderRagdollTracker()
     local vpSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
     local xStart = 20
     local yStart = math.floor(vpSize.Y * 0.35)
-    local lineHeight = 45
+    local lineHeight = 48
     local panelW = 280
-    local panelH = 26
+    local panelH = 40
     for i = 1, #entries do
         local entry = entries[i]
         local baseIdx = (i - 1) * 6 + 1
@@ -465,7 +467,7 @@ local function RenderRagdollTracker()
         local barFill = RagdollTracker.drawn[baseIdx + 4]
         local borderBar = RagdollTracker.drawn[baseIdx + 5]
         bg.ZIndex = 0; nameText.ZIndex = 7; pctText.ZIndex = 7
-        barBg.ZIndex = 0; barFill.ZIndex = 1; borderBar.ZIndex = 0
+        barBg.ZIndex = 1; barFill.ZIndex = 2; borderBar.ZIndex = 3
         local p = math.clamp(entry.progress or 0, 0, 1)
         local r, g, b
         if p < 0.5 then
@@ -500,19 +502,19 @@ local function RenderRagdollTracker()
         pctText.Position = Vector2.new(xStart + panelW - 52, y + 6)
         pctText.Color = labelColor
         pctText.Visible = true
-        
-        local barY = y + panelH + 4
-        local barW = 260
+
+        local barY = y + panelH - 12
+        local barW = panelW - 20
         local barH = 8
         local barX = xStart + 10
-        
+
         barBg.Position = Vector2.new(barX, barY)
         barBg.Size = Vector2.new(barW, barH)
         barBg.Color = Color3.fromRGB(20, 20, 25)
         barBg.Transparency = 0.2
         barBg.Filled = true
         barBg.Visible = true
-        
+
         local fillW = math.max(2, math.floor(barW * p))
         barFill.Position = Vector2.new(barX, barY)
         barFill.Size = Vector2.new(fillW, barH)
@@ -520,7 +522,7 @@ local function RenderRagdollTracker()
         barFill.Transparency = 0.4
         barFill.Filled = true
         barFill.Visible = true
-        
+
         borderBar.Position = Vector2.new(barX - 1, barY - 1)
         borderBar.Size = Vector2.new(barW + 2, barH + 2)
         borderBar.Color = Color3.fromRGB(255, 255, 255)
@@ -721,9 +723,7 @@ local function GetFtfCharacterTargets() return RefreshFtfCharacterCache(false) e
 -- ============================================================================
 -- OPTIMIZED DOOR ESP - v1.9.6
 -- ============================================================================
-local DOOR_STATE_INTERVAL = 0.3  -- OPTIMIZED: was 0.05 (6x less calculation)
-local DoorUpdateCounter = 0
-local DOOR_UPDATE_INTERVAL = 4  -- OPTIMIZED: only update doors every 4 frames
+local DOOR_STATE_INTERVAL = 0.3
 
 local function GetDoorSlabParts(model)
     local cached = DoorSlabParts[model]
@@ -755,7 +755,7 @@ local function GetDoorSlabParts(model)
             local ignore = { DoorTrigger = true, ExitDoorTrigger = true, ExitArea = true,
                 Frame = true, Light = true, Hinge = true, DoorBarrier = true }
             if not ignore[child.Name] then table.insert(parts, child) end
-            if #parts >= 8 then break  end
+            if #parts >= 8 then break end
         end
     end
     
@@ -878,11 +878,6 @@ local function UpdateFreezePodEsp()
 end
 
 local function RenderDoorBucket(kind, bucketKey, targets, defaultColor, onlyOpen)
-    DoorUpdateCounter = DoorUpdateCounter + 1
-    if DoorUpdateCounter % DOOR_UPDATE_INTERVAL ~= 0 then
-        return
-    end
-    
     local seen = {}
     local cam = workspace.CurrentCamera
     local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
