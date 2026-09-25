@@ -1,6 +1,7 @@
 -- Windy ESP — Rimuru UI Edition v1.9
 -- For Windy Bee Simulator / FTF
 -- Loads the rimuru framework from kherbyy/rem-ui.
+-- v1.9.1: Full cleanup on disable (no memory leak, no lag after toggle-off)
 
 local RIM_URL = "https://raw.githubusercontent.com/kherbyy/rem-ui/main/rem.lua"
 local UI = _G.Rimuru or _G.Rem
@@ -160,6 +161,25 @@ local function HideEspEntry(e)
     if e.barBg then e.barBg.Visible = false end
     if e.barFill then e.barFill.Visible = false end
     if e.borderBar then e.borderBar.Visible = false end
+end
+
+local function DestroyEspEntry(e)
+    if not e then return end
+    if e.box and e.box.Remove then pcall(function() e.box:Remove() end) end
+    if e.label and e.label.Remove then pcall(function() e.label:Remove() end) end
+    if e.percentLabel and e.percentLabel.Remove then pcall(function() e.percentLabel:Remove() end) end
+    if e.barBg and e.barBg.Remove then pcall(function() e.barBg:Remove() end) end
+    if e.barFill and e.barFill.Remove then pcall(function() e.barFill:Remove() end) end
+    if e.borderBar and e.borderBar.Remove then pcall(function() e.borderBar:Remove() end) end
+end
+
+local function FullCleanupBucket(bucketKey)
+    if not ActiveEspKeys[bucketKey] then return end
+    for k, _ in pairs(ActiveEspKeys[bucketKey]) do
+        local e = EspObjects[k]
+        if e then DestroyEspEntry(e); EspObjects[k] = nil end
+    end
+    ActiveEspKeys[bucketKey] = {}
 end
 
 local function CleanupTrackedEspKeys(bucketKey, seen)
@@ -749,11 +769,11 @@ local function UpdateNpcEsp()
     local beastEspEnabled = State.npc_beast_esp
     local tracersEnabled = State.show_tracers
     if not playerEspEnabled and not beastEspEnabled and not tracersEnabled then
-        for key, _ in pairs(ActiveEspKeys.npc or {}) do
-            local e = EspObjects[key]; if e then HideEspEntry(e) end
+        FullCleanupBucket("npc")
+        for k, t in pairs(TracerObjects) do
+            if t and t.Remove then pcall(function() t:Remove() end) end
+            TracerObjects[k] = nil
         end
-        ActiveEspKeys.npc = {}
-        for k, t in pairs(TracerObjects) do HideTracerEntry(t) end
         ActiveTracerKeys = {}
         return
     end
@@ -956,10 +976,7 @@ end
 
 local function UpdateComputerEsp()
     if not State.pc_esp then
-        for key, _ in pairs(ActiveEspKeys.pc or {}) do
-            local e = EspObjects[key]; if e then HideEspEntry(e) end
-        end
-        ActiveEspKeys.pc = {}
+        FullCleanupBucket("pc")
         return
     end
     local seen = {}
@@ -1105,10 +1122,7 @@ end
 
 local function UpdateFreezePodEsp()
     if not State.freeze_pod_esp then
-        for key, _ in pairs(ActiveEspKeys.fp or {}) do
-            local e = EspObjects[key]; if e then HideEspEntry(e) end
-        end
-        ActiveEspKeys.fp = {}
+        FullCleanupBucket("fp")
         return
     end
     local seen = {}
@@ -1194,10 +1208,7 @@ end
 local function UpdateDoorEsp()
     if not State.exit_door_esp then
         for _, key in ipairs({ "sd", "dd", "dw", "ed" }) do
-            for k, _ in pairs(ActiveEspKeys[key] or {}) do
-                local e = EspObjects[k]; if e then HideEspEntry(e) end
-            end
-            ActiveEspKeys[key] = {}
+            FullCleanupBucket(key)
         end
         return
     end
@@ -1248,25 +1259,55 @@ RunService.RenderStepped:Connect(function(dt)
     if lastTick > 0 and (now - lastTick) < MinUpdateDelta then return end
     if lastTick > 0 then dt = now - lastTick end
     LastFrameTick = now
+
     pcall(CheckForMapChange)
     pcall(PollRagdollTracker)
     pcall(RenderRagdollTracker)
-    pcall(function()
-        if State.npc_player_esp or State.npc_beast_esp or State.show_tracers
-            or next(ActiveEspKeys.npc) ~= nil or next(ActiveTracerKeys) ~= nil then
-            UpdateNpcEsp()
-        end
-        if State.pc_esp or next(ActiveEspKeys.pc) ~= nil then UpdateComputerEsp() end
-        if State.freeze_pod_esp or next(ActiveEspKeys.fp) ~= nil then UpdateFreezePodEsp() end
-        if State.exit_door_esp or next(ActiveEspKeys.sd) ~= nil or next(ActiveEspKeys.dd) ~= nil or next(ActiveEspKeys.dw) ~= nil or next(ActiveEspKeys.ed) ~= nil then
-            UpdateDoorEsp()
-        end
-    end)
+
+    -- NPC / tracers: run only when active, cleanup when disabled
+    if State.npc_player_esp or State.npc_beast_esp or State.show_tracers then
+        pcall(UpdateNpcEsp)
+    elseif next(ActiveEspKeys.npc) ~= nil then
+        pcall(function()
+            FullCleanupBucket("npc")
+            for k, t in pairs(TracerObjects) do
+                if t and t.Remove then pcall(function() t:Remove() end) end
+                TracerObjects[k] = nil
+            end
+            ActiveTracerKeys = {}
+        end)
+    end
+
+    -- PC ESP
+    if State.pc_esp then
+        pcall(UpdateComputerEsp)
+    elseif next(ActiveEspKeys.pc) ~= nil then
+        pcall(function() FullCleanupBucket("pc") end)
+    end
+
+    -- Freeze Pod ESP
+    if State.freeze_pod_esp then
+        pcall(UpdateFreezePodEsp)
+    elseif next(ActiveEspKeys.fp) ~= nil then
+        pcall(function() FullCleanupBucket("fp") end)
+    end
+
+    -- Door ESP
+    if State.exit_door_esp then
+        pcall(UpdateDoorEsp)
+    elseif next(ActiveEspKeys.sd) ~= nil or next(ActiveEspKeys.dd) ~= nil
+        or next(ActiveEspKeys.dw) ~= nil or next(ActiveEspKeys.ed) ~= nil then
+        pcall(function()
+            for _, key in ipairs({ "sd", "dd", "dw", "ed" }) do
+                FullCleanupBucket(key)
+            end
+        end)
+    end
 end)
 
 UI:Notify({
-    Title = "Windy ESP v1.9",
-    Content = "Loaded. Rimuru framework active.",
+    Title = "Windy ESP v1.9.1",
+    Content = "Loaded. Lag fix applied.",
     Type = "success",
     Duration = 4,
 })
