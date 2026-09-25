@@ -1,8 +1,8 @@
--- Windy ESP — Rimuru UI Edition v1.9.6 (OPTIMIZED - Door/Freeze Pod lag fixes)
+-- Windy ESP — Rimuru UI Edition v1.9.7
 -- For Windy Bee Simulator / FTF
 -- v1.9.6: Full optimization - Door ESP & Freeze Pod ESP no longer lag
 -- v1.9.6b: Ragdoll Tracker bar moved inside panel
--- v1.9.6c: Fixed door throttle bug + removed frame throttle (smooth doors)
+-- v1.9.7: Reverted :IsA("BasePart") to IsRealPart() in door functions
 
 local RIM_URL = "https://raw.githubusercontent.com/kherbyy/rem-ui/main/rem.lua"
 local UI = _G.Rimuru or _G.Rem
@@ -721,7 +721,7 @@ end
 local function GetFtfCharacterTargets() return RefreshFtfCharacterCache(false) end
 
 -- ============================================================================
--- OPTIMIZED DOOR ESP - v1.9.6
+-- DOOR ESP
 -- ============================================================================
 local DOOR_STATE_INTERVAL = 0.3
 
@@ -740,7 +740,7 @@ local function GetDoorSlabParts(model)
         local slab = model:FindFirstChild(slabName)
         if slab then
             for _, child in ipairs(slab:GetChildren()) do
-                if child:IsA("BasePart") then table.insert(parts, child) end
+                if IsRealPart(child) then table.insert(parts, child) end
             end
         end
     end
@@ -751,7 +751,7 @@ local function GetDoorSlabParts(model)
     end
     
     for _, child in ipairs(model:GetDescendants()) do
-        if child:IsA("BasePart") then
+        if IsRealPart(child) then
             local ignore = { DoorTrigger = true, ExitDoorTrigger = true, ExitArea = true,
                 Frame = true, Light = true, Hinge = true, DoorBarrier = true }
             if not ignore[child.Name] then table.insert(parts, child) end
@@ -787,7 +787,7 @@ local function IsDoorOpen(model, camPos)
     pcall(function()
         for _, name in ipairs({ "DoorTrigger", "ExitDoorTrigger" }) do
             local t = model:FindFirstChild(name)
-            if t and t:IsA("BasePart") then anchor = t; break end
+            if t and IsRealPart(t) then anchor = t; break end
         end
     end)
     
@@ -1438,8 +1438,8 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 UI:Notify({
-    Title = "Windy ESP v1.9.6 OPTIMIZED",
-    Content = "Loaded! Door & Freeze Pod lag FIXED ⚡",
+    Title = "Windy ESP v1.9.7",
+    Content = "Loaded. Doors fixed.",
     Type = "success",
     Duration = 4,
 })
