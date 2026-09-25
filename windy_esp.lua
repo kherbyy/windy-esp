@@ -1,8 +1,8 @@
--- Windy ESP — Rimuru UI Edition v1.9.2
+-- Windy ESP — Rimuru UI Edition v1.9.3
 -- For Windy Bee Simulator / FTF
 -- Loads the rimuru framework from kherbyy/rem-ui.
 -- v1.9.1: Full cleanup on disable (no memory leak).
--- v1.9.2: Removed progress bars (player/PC/ragdoll). Percent inline with name.
+-- v1.9.3: Bars restored on Player / PC / Ragdoll.
 
 local RIM_URL = "https://raw.githubusercontent.com/kherbyy/rem-ui/main/rem.lua"
 local UI = _G.Rimuru or _G.Rem
@@ -403,11 +403,11 @@ local function PollRagdollTracker()
     end
 end
 
--- Ragdoll Tracker: now 3 objects per entry (panel + name text + percent text). No bar.
+-- Ragdoll Tracker: 5 objects per entry (panel + name + % + bar bg + bar fill)
 local function EnsureTrackerSlot(idx)
-    while #RagdollTracker.drawn < idx + 2 do
+    while #RagdollTracker.drawn < idx + 4 do
         local cur = #RagdollTracker.drawn + 1
-        local slotInGroup = (cur - 1) % 3
+        local slotInGroup = (cur - 1) % 5
         local obj
         if slotInGroup == 0 then
             obj = Drawing.new("Square"); obj.Filled = false; obj.Thickness = 1
@@ -415,9 +415,15 @@ local function EnsureTrackerSlot(idx)
         elseif slotInGroup == 1 then
             obj = Drawing.new("Text"); obj.Center = false; obj.Outline = true; obj.Font = 2
             obj.Size = 16; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 7
-        else
+        elseif slotInGroup == 2 then
             obj = Drawing.new("Text"); obj.Center = false; obj.Outline = true; obj.Font = 2
             obj.Size = 14; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 7
+        elseif slotInGroup == 3 then
+            obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.0
+            obj.Color = Color3.fromRGB(70, 70, 80); obj.ZIndex = 5
+        else
+            obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.0
+            obj.Color = Color3.fromRGB(255, 60, 60); obj.ZIndex = 6
         end
         obj.Visible = false
         table.insert(RagdollTracker.drawn, obj)
@@ -444,18 +450,21 @@ local function RenderRagdollTracker()
     local vpSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
     local xStart = 20
     local yStart = math.floor(vpSize.Y * 0.35)
-    local lineHeight = 30
+    local lineHeight = 44
     local panelW = 280
-    local panelH = 26
+    local panelH = 40
     for i = 1, #entries do
         local entry = entries[i]
-        local baseIdx = (i - 1) * 3 + 1
+        local baseIdx = (i - 1) * 5 + 1
         local y = yStart + (i - 1) * lineHeight
         EnsureTrackerSlot(baseIdx)
         local bg = RagdollTracker.drawn[baseIdx]
         local nameText = RagdollTracker.drawn[baseIdx + 1]
         local pctText = RagdollTracker.drawn[baseIdx + 2]
+        local barBg = RagdollTracker.drawn[baseIdx + 3]
+        local barFill = RagdollTracker.drawn[baseIdx + 4]
         bg.ZIndex = 0; nameText.ZIndex = 7; pctText.ZIndex = 7
+        barBg.ZIndex = 5; barFill.ZIndex = 6
         local p = math.clamp(entry.progress or 0, 0, 1)
         local r, g, b
         if p < 0.5 then
@@ -483,15 +492,26 @@ local function RenderRagdollTracker()
         local stateLabel = entry.reason
         if p >= 0.9 then stateLabel = entry.reason .. " (ALMOST UP)" end
         nameText.Text = "[" .. stateLabel .. "] " .. entry.name
-        nameText.Position = Vector2.new(xStart + 8, y + 5)
+        nameText.Position = Vector2.new(xStart + 8, y + 6)
         nameText.Color = labelColor
         nameText.Visible = true
         pctText.Text = string.format("%.0f%%", p * 100)
-        pctText.Position = Vector2.new(xStart + panelW - 52, y + 6)
+        pctText.Position = Vector2.new(xStart + panelW - 52, y + 8)
         pctText.Color = labelColor
         pctText.Visible = true
+        local barW = panelW - 16
+        local barH = 8
+        local barX = xStart + 8
+        local barY = y + panelH - 12
+        barBg.Position = Vector2.new(barX, barY); barBg.Size = Vector2.new(barW, barH)
+        barBg.Color = Color3.fromRGB(70, 70, 80); barBg.Transparency = 0.0
+        barBg.Filled = true; barBg.Visible = true
+        local fillW = math.max(4, math.floor(barW * p))
+        barFill.Position = Vector2.new(barX, barY); barFill.Size = Vector2.new(fillW, barH)
+        barFill.Color = labelColor; barFill.Transparency = 0.0
+        barFill.Filled = true; barFill.Visible = true
     end
-    local usedSlots = #entries * 3
+    local usedSlots = #entries * 5
     for i = usedSlots + 1, #RagdollTracker.drawn do RagdollTracker.drawn[i].Visible = false end
 end
 
@@ -861,7 +881,7 @@ local function UpdateNpcEsp()
                                         e.percentLabel.Visible = false; e.borderBar.Visible = false
                                     end
                                 else
-                                    -- PLAYER: label with inline % (no bar)
+                                    -- PLAYER: label + bar + % underneath
                                     local player = meta.player
                                     local playerProgress = player and GetPlayerProgress(player) or 0
                                     if State.show_labels then
@@ -878,19 +898,36 @@ local function UpdateNpcEsp()
                                                 else e.label.Color = espColor end
                                             else e.label.Color = espColor end
                                         else e.label.Color = espColor end
-                                        if State.show_player_progress and playerProgress > 0 then
-                                            if playerProgress >= 1 then
-                                                text = text .. "  DONE"
-                                            else
-                                                text = text .. string.format("  %.0f%%", playerProgress * 100)
-                                            end
-                                        end
                                         e.label.Text = text
                                         e.label.Position = Vector2.new(math.floor(hp.X), math.floor(by - 16))
                                         e.label.Size = 14; e.label.Visible = true
                                     else e.label.Visible = false end
-                                    e.barBg.Visible = false; e.barFill.Visible = false
-                                    e.percentLabel.Visible = false; e.borderBar.Visible = false
+                                    if State.show_player_progress then
+                                        local barY = by + bh + 4
+                                        local barW = math.max(20, math.floor(bw * 1.2))
+                                        local barH = math.max(4, State.bar_height)
+                                        local barX = math.floor(hp.X - barW / 2)
+                                        e.barBg.Position = Vector2.new(barX, barY); e.barBg.Size = Vector2.new(barW, barH)
+                                        e.barBg.Color = Color3.fromRGB(20, 20, 25); e.barBg.Transparency = 0.2; e.barBg.Visible = true
+                                        local fw = math.max(2, math.floor(barW * math.clamp(playerProgress, 0, 1)))
+                                        local fc
+                                        if playerProgress >= 0.95 then fc = Color3.fromRGB(0,255,50)
+                                        elseif playerProgress > 0.5 then fc = Color3.fromRGB(255,180,0)
+                                        elseif playerProgress > 0 then fc = Color3.fromRGB(255,100,100)
+                                        else fc = Color3.fromRGB(60,60,60); fw = 2 end
+                                        e.barFill.Position = Vector2.new(barX, barY); e.barFill.Size = Vector2.new(fw, barH)
+                                        e.barFill.Color = fc; e.barFill.Transparency = 0.4; e.barFill.Visible = true
+                                        e.borderBar.Position = Vector2.new(barX - 1, barY - 1); e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
+                                        e.borderBar.Color = Color3.fromRGB(255, 255, 255); e.borderBar.Transparency = 0.5
+                                        e.borderBar.Thickness = 1; e.borderBar.Visible = true
+                                        e.percentLabel.Text = (playerProgress >= 1) and "DONE" or string.format("%.0f%%", playerProgress * 100)
+                                        e.percentLabel.Position = Vector2.new(math.floor(hp.X), math.floor(barY + barH + 10))
+                                        e.percentLabel.Color = playerProgress > 0 and Color3.fromRGB(255,255,255) or Color3.fromRGB(100,100,100)
+                                        e.percentLabel.Size = 13; e.percentLabel.Visible = true
+                                    else
+                                        e.barBg.Visible = false; e.barFill.Visible = false
+                                        e.percentLabel.Visible = false; e.borderBar.Visible = false
+                                    end
                                 end
                             else
                                 e.label.Visible = false; e.barBg.Visible = false; e.barFill.Visible = false
@@ -1031,41 +1068,56 @@ local function UpdateComputerEsp()
                         local hackerName = currentHackerName or lastHacker
                         e.box.Position = Vector2.new(bx, by); e.box.Size = Vector2.new(w, h)
                         e.box.Color = espColor; e.box.Visible = true
-                        -- PC: label with inline % (no bar)
+                        -- PC: label + bar + % underneath
                         if State.show_labels then
-                            local baseText
                             if screenState == "done" then
-                                baseText = "PC (HACKED)"
+                                e.label.Text = "PC (HACKED)"; e.label.Color = Color3.fromRGB(0, 255, 80)
                             elseif hackerName then
                                 local nm = hackerName
                                 if #nm > 8 then nm = string.sub(nm, 1, 6) .. ".." end
-                                baseText = labelText .. " (" .. nm .. ")"
+                                e.label.Text = labelText .. " (" .. nm .. ")"; e.label.Color = espColor
                             else
-                                baseText = labelText .. " (IDLE)"
+                                e.label.Text = labelText .. " (IDLE)"; e.label.Color = Color3.fromRGB(150, 150, 150)
                             end
-                            if State.show_player_progress and saved > 0 then
-                                if saved >= 1 then
-                                    baseText = baseText .. "  DONE"
-                                else
-                                    baseText = baseText .. string.format("  %.0f%%", saved * 100)
+                            e.label.Position = Vector2.new(math.floor(sp.X), math.floor(by - 15)); e.label.Visible = true
+                        else e.label.Visible = false end
+                        if State.show_player_progress then
+                            local barY = by + h + 4
+                            local barW = math.max(20, math.floor(w * (State.bar_width / 100)))
+                            local barH = math.max(4, State.bar_height)
+                            local barX = math.floor(sp.X - barW / 2)
+                            e.barBg.Position = Vector2.new(barX, barY); e.barBg.Size = Vector2.new(barW, barH)
+                            e.barBg.Color = Color3.fromRGB(20, 20, 25); e.barBg.Transparency = 0.2; e.barBg.Visible = true
+                            local fw = math.max(2, math.floor(barW * math.clamp(saved, 0, 1)))
+                            local fc
+                            if saved >= 0.95 then fc = Color3.fromRGB(0, 255, 50)
+                            elseif saved > 0.5 then fc = Color3.fromRGB(255, 180, 0)
+                            elseif saved > 0 then fc = Color3.fromRGB(255, 100, 100)
+                            else fc = Color3.fromRGB(60, 60, 60) end
+                            e.barFill.Position = Vector2.new(barX, barY); e.barFill.Size = Vector2.new(fw, barH)
+                            e.barFill.Color = fc; e.barFill.Transparency = 0.4; e.barFill.Visible = true
+                            e.borderBar.Position = Vector2.new(barX - 1, barY - 1); e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
+                            e.borderBar.Color = Color3.fromRGB(255, 255, 255); e.borderBar.Transparency = 0.5
+                            e.borderBar.Thickness = 1; e.borderBar.Visible = true
+                            local percentText
+                            if saved >= 1 then percentText = "DONE"
+                            else
+                                percentText = string.format("%.0f%%", saved * 100)
+                                local displayHacker = currentHackerName or lastHacker
+                                if displayHacker then
+                                    local nm = displayHacker
+                                    if #nm > 10 then nm = string.sub(nm, 1, 8) .. ".." end
+                                    percentText = nm .. " " .. percentText
                                 end
                             end
-                            e.label.Text = baseText
-                            if screenState == "done" then
-                                e.label.Color = Color3.fromRGB(0, 255, 80)
-                            elseif hackerName then
-                                e.label.Color = espColor
-                            else
-                                e.label.Color = Color3.fromRGB(150, 150, 150)
-                            end
-                            e.label.Position = Vector2.new(math.floor(sp.X), math.floor(by - 15))
-                            e.label.Visible = true
+                            e.percentLabel.Text = percentText
+                            e.percentLabel.Position = Vector2.new(math.floor(sp.X), math.floor(barY + barH + 10))
+                            e.percentLabel.Color = Color3.fromRGB(255, 255, 255)
+                            e.percentLabel.Size = 13; e.percentLabel.Visible = true
                         else
-                            e.label.Visible = false
+                            e.barBg.Visible = false; e.barFill.Visible = false
+                            e.percentLabel.Visible = false; e.borderBar.Visible = false
                         end
-                        -- No bar for PCs anymore
-                        e.barBg.Visible = false; e.barFill.Visible = false
-                        e.percentLabel.Visible = false; e.borderBar.Visible = false
                     else HideEspEntry(e) end
                 end
             end
@@ -1191,7 +1243,7 @@ EspTab:AddToggle({ Id = "windy_door_state", Title = "Show Open/Closed State", De
 EspTab:AddToggle({ Id = "windy_show_boxes", Title = "Show Boxes", Default = true, Callback = function(v) State.show_boxes = v end })
 EspTab:AddToggle({ Id = "windy_show_labels", Title = "Show Labels", Default = true, Callback = function(v) State.show_labels = v end })
 EspTab:AddToggle({ Id = "windy_show_distance", Title = "Show Distance", Default = false, Callback = function(v) State.show_distance = v end })
-EspTab:AddToggle({ Id = "windy_player_progress", Title = "Player Progress %", Default = true, Callback = function(v) State.show_player_progress = v end })
+EspTab:AddToggle({ Id = "windy_player_progress", Title = "Player Progress Bars", Default = true, Callback = function(v) State.show_player_progress = v end })
 
 BeastTab:AddToggle({ Id = "windy_power_name", Title = "Power Name", Default = true, Callback = function(v) State.show_power_name = v end })
 BeastTab:AddToggle({ Id = "windy_power_bar", Title = "Power Bar", Default = true, Callback = function(v) State.show_power_bar = v end })
@@ -1256,8 +1308,8 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 UI:Notify({
-    Title = "Windy ESP v1.9.2",
-    Content = "Loaded. Bars removed — percent inline.",
+    Title = "Windy ESP v1.9.3",
+    Content = "Loaded. Bars restored.",
     Type = "success",
     Duration = 4,
 })
