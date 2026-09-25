@@ -1,20 +1,19 @@
 -- Windy ESP — Rimuru UI Edition v1.9
 -- For Windy Bee Simulator / FTF
--- Load AFTER rem.lua. Framework is exposed as getfenv().Rimuru.
+-- Loads the rimuru framework from kherbyy/rem-ui.
 
--- =====================================================================
--- 1. GRAB THE FRAMEWORK
--- =====================================================================
-local UI = getfenv().Rimuru or getfenv().Rem or _G.Rimuru or _G.Rem
+local RIM_URL = "https://raw.githubusercontent.com/kherbyy/rem-ui/main/rem.lua"
+local UI = _G.Rimuru or _G.Rem
 if not UI then
-    error("[WindyESP] rimuru framework not loaded. Load rem.lua first.")
+    loadstring(game:HttpGet(RIM_URL))()
+    UI = _G.Rimuru or _G.Rem
+end
+if not UI then
+    error("[WindyESP] rimuru framework failed to load from " .. RIM_URL)
 end
 
 local waiter = (task and task.wait) or wait
 
--- =====================================================================
--- 2. SERVICES
--- =====================================================================
 local function GetMatchaService(name)
     local service = nil
     pcall(function() service = game[name] end)
@@ -66,9 +65,6 @@ end
 
 print("[WindyESP] Services ready.")
 
--- =====================================================================
--- STATE
--- =====================================================================
 local State = {
     npc_player_esp = false,
     npc_beast_esp = false,
@@ -77,18 +73,14 @@ local State = {
     exit_door_esp = false,
     door_only_open = false,
     hide_completed_pcs = false,
-
     door_show_state = true,
     show_boxes = true,
     show_labels = true,
     show_distance = false,
     show_player_progress = true,
-
     show_tracers = false,
-
     player_show_state = true,
     player_state_color = true,
-
     show_power_name = true,
     show_power_bar = true,
     show_power_percent = true,
@@ -96,22 +88,15 @@ local State = {
     bar_height = 6,
     bar_width = 100,
     power_font_size = 16,
-
     isRunning = true,
 }
 
--- =====================================================================
--- HELPERS
--- =====================================================================
 local function isVector3(v)
     if v == nil then return false end
     local ok, x = pcall(function() return v.X end)
     return ok and type(x) == "number"
 end
 
--- =====================================================================
--- DRAWING PRIMITIVES
--- =====================================================================
 local function CreateEspText()
     local t = Drawing.new("Text")
     t.Center = true; t.Outline = true; t.Font = 2; t.Size = 13
@@ -122,7 +107,6 @@ end
 
 local EspObjects = {}
 local ActiveEspKeys = { npc = {}, pc = {}, fp = {}, ed = {}, sd = {}, dd = {}, dw = {} }
-
 local TracerObjects = {}
 local ActiveTracerKeys = {}
 
@@ -225,9 +209,6 @@ local function IsRealPart(inst)
     return true
 end
 
--- =====================================================================
--- PLAYER PROGRESS
--- =====================================================================
 local PlayerProgressCache = {}
 local LastProgressCacheRefresh = 0
 
@@ -275,81 +256,54 @@ local function GetPlayerProgress(player)
     return GetIndividualPlayerProgress(player)
 end
 
--- =====================================================================
--- PLAYER STATE DETECTION
--- =====================================================================
 local PLAYER_STATE_CACHE = {}
 local PLAYER_STATE_INTERVAL = 0.15
 
 local function GetPlayerState(player)
     if not player then return nil, nil end
-
     local now = tick()
     local cached = PLAYER_STATE_CACHE[player]
     if cached and (now - cached.t) < PLAYER_STATE_INTERVAL then
         return cached.state, cached.color
     end
-
     local state = nil
     local color = nil
-
     local statsModule = player:FindFirstChild("TempPlayerStatsModule")
     if statsModule then
         local ragdoll = statsModule:FindFirstChild("Ragdoll")
         if ragdoll then
             local ok, val = pcall(function() return ragdoll.Value end)
-            if ok and val == true then
-                state = "DOWN"
-                color = Color3.fromRGB(255, 60, 60)
-            end
+            if ok and val == true then state = "DOWN"; color = Color3.fromRGB(255, 60, 60) end
         end
-
         if not state then
             local captured = statsModule:FindFirstChild("Captured")
             if captured then
                 local ok, val = pcall(function() return captured.Value end)
-                if ok and val == true then
-                    state = "CAPTURED"
-                    color = Color3.fromRGB(255, 130, 0)
-                end
+                if ok and val == true then state = "CAPTURED"; color = Color3.fromRGB(255, 130, 0) end
             end
         end
-
         if not state then
             local crawling = statsModule:FindFirstChild("IsCrawling")
             if crawling then
                 local ok, val = pcall(function() return crawling.Value end)
-                if ok and val == true then
-                    state = "CRAWLING"
-                    color = Color3.fromRGB(255, 220, 60)
-                end
+                if ok and val == true then state = "CRAWLING"; color = Color3.fromRGB(255, 220, 60) end
             end
         end
-
         if not state then
             local anim = statsModule:FindFirstChild("CurrentAnimation")
             if anim then
                 local ok, val = pcall(function() return anim.Value end)
                 if ok and type(val) == "string" then
-                    if val == "Typing" then
-                        state = "TYPING"
-                        color = Color3.fromRGB(100, 180, 255)
-                    elseif val == "Carry" then
-                        state = "CARRY"
-                        color = Color3.fromRGB(180, 100, 255)
-                    end
+                    if val == "Typing" then state = "TYPING"; color = Color3.fromRGB(100, 180, 255)
+                    elseif val == "Carry" then state = "CARRY"; color = Color3.fromRGB(180, 100, 255) end
                 end
             end
         end
     end
-
     PLAYER_STATE_CACHE[player] = { state = state, color = color, t = now }
     return state, color
 end
 
--- =====================================================================
--- RAGDOLL TRACKER
--- =====================================================================
 local RagdollTracker = {
     active = {},
     pollInterval = 0.1,
@@ -358,43 +312,34 @@ local RagdollTracker = {
     visible = false,
     maxDisplay = 8,
 }
-
 local DOWN_GRACE_TIME = 0.5
 
 local function ReadPlayerDownState(player)
     if not player then return nil, nil, nil end
     local stats = player:FindFirstChild("TempPlayerStatsModule")
     if not stats then return nil, nil, nil end
-
     local ragdollVal = false
     local capturedVal = false
     local progressVal = 0
     local hasStats = false
-
     local ragdoll = stats:FindFirstChild("Ragdoll")
     if ragdoll then
         hasStats = true
         local ok, val = pcall(function() return ragdoll.Value end)
         if ok then ragdollVal = (val == true) end
     end
-
     local captured = stats:FindFirstChild("Captured")
     if captured then
         hasStats = true
         local ok, val = pcall(function() return captured.Value end)
         if ok then capturedVal = (val == true) end
     end
-
     local progress = stats:FindFirstChild("ActionProgress")
     if progress then
         local ok, val = pcall(function() return progress.Value end)
-        if ok and type(val) == "number" then
-            progressVal = math.clamp(val, 0, 1)
-        end
+        if ok and type(val) == "number" then progressVal = math.clamp(val, 0, 1) end
     end
-
     if not hasStats then return nil, nil, nil end
-
     if ragdollVal then return true, "DOWN", progressVal end
     if capturedVal then return true, "CAPTURED", progressVal end
     return false, nil, 0
@@ -404,36 +349,26 @@ local function PollRagdollTracker()
     local now = tick()
     if (now - RagdollTracker.lastPoll) < RagdollTracker.pollInterval then return end
     RagdollTracker.lastPoll = now
-
     local seenThisTick = {}
-
     for _, player in ipairs(Players:GetPlayers()) do
         seenThisTick[player] = true
         if player ~= LocalPlayer then
             local isDown, reason, progress = ReadPlayerDownState(player)
             local record = RagdollTracker.active[player]
-
             if isDown == true then
                 if not record then
                     RagdollTracker.active[player] = {
-                        name = player.Name,
-                        startTime = now,
-                        reason = reason or "DOWN",
-                        lastDownTick = now,
-                        progress = progress or 0,
+                        name = player.Name, startTime = now,
+                        reason = reason or "DOWN", lastDownTick = now, progress = progress or 0,
                     }
                 else
                     record.lastDownTick = now
                     record.progress = progress or 0
-                    if reason and reason ~= record.reason then
-                        record.reason = reason
-                    end
+                    if reason and reason ~= record.reason then record.reason = reason end
                 end
             elseif isDown == false then
-                if record then
-                    if (now - record.lastDownTick) >= DOWN_GRACE_TIME then
-                        RagdollTracker.active[player] = nil
-                    end
+                if record and (now - record.lastDownTick) >= DOWN_GRACE_TIME then
+                    RagdollTracker.active[player] = nil
                 end
             elseif isDown == nil and record then
                 if (now - (record.lastDownTick or 0)) >= DOWN_GRACE_TIME then
@@ -442,11 +377,8 @@ local function PollRagdollTracker()
             end
         end
     end
-
     for player, _ in pairs(RagdollTracker.active) do
-        if not seenThisTick[player] then
-            RagdollTracker.active[player] = nil
-        end
+        if not seenThisTick[player] then RagdollTracker.active[player] = nil end
     end
 end
 
@@ -456,40 +388,20 @@ local function EnsureTrackerSlot(idx)
         local slotInGroup = (cur - 1) % 5
         local obj
         if slotInGroup == 0 then
-            obj = Drawing.new("Square")
-            obj.Filled = false
-            obj.Thickness = 1
-            obj.Transparency = 0.7
-            obj.Color = Color3.fromRGB(80, 30, 30)
-            obj.ZIndex = 0
+            obj = Drawing.new("Square"); obj.Filled = false; obj.Thickness = 1
+            obj.Transparency = 0.7; obj.Color = Color3.fromRGB(80, 30, 30); obj.ZIndex = 0
         elseif slotInGroup == 1 then
-            obj = Drawing.new("Text")
-            obj.Center = false
-            obj.Outline = true
-            obj.Font = 2
-            obj.Size = 16
-            obj.Color = Color3.fromRGB(255, 255, 255)
-            obj.ZIndex = 7
+            obj = Drawing.new("Text"); obj.Center = false; obj.Outline = true; obj.Font = 2
+            obj.Size = 16; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 7
         elseif slotInGroup == 2 then
-            obj = Drawing.new("Text")
-            obj.Center = false
-            obj.Outline = true
-            obj.Font = 2
-            obj.Size = 14
-            obj.Color = Color3.fromRGB(255, 255, 255)
-            obj.ZIndex = 7
+            obj = Drawing.new("Text"); obj.Center = false; obj.Outline = true; obj.Font = 2
+            obj.Size = 14; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 7
         elseif slotInGroup == 3 then
-            obj = Drawing.new("Square")
-            obj.Filled = true
-            obj.Transparency = 0.0
-            obj.Color = Color3.fromRGB(70, 70, 80)
-            obj.ZIndex = 5
+            obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.0
+            obj.Color = Color3.fromRGB(70, 70, 80); obj.ZIndex = 5
         else
-            obj = Drawing.new("Square")
-            obj.Filled = true
-            obj.Transparency = 0.0
-            obj.Color = Color3.fromRGB(255, 60, 60)
-            obj.ZIndex = 6
+            obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.0
+            obj.Color = Color3.fromRGB(255, 60, 60); obj.ZIndex = 6
         end
         obj.Visible = false
         table.insert(RagdollTracker.drawn, obj)
@@ -498,156 +410,90 @@ end
 
 local function RenderRagdollTracker()
     if not RagdollTracker.visible then
-        for _, obj in ipairs(RagdollTracker.drawn) do
-            obj.Visible = false
-        end
+        for _, obj in ipairs(RagdollTracker.drawn) do obj.Visible = false end
         return
     end
-
     local entries = {}
     for _, rec in pairs(RagdollTracker.active) do
-        table.insert(entries, {
-            name = rec.name,
-            reason = rec.reason or "DOWN",
-            progress = rec.progress or 0,
-            elapsed = tick() - rec.startTime,
-        })
+        table.insert(entries, { name = rec.name, reason = rec.reason or "DOWN",
+            progress = rec.progress or 0, elapsed = tick() - rec.startTime })
     end
     table.sort(entries, function(a, b) return a.progress < b.progress end)
-
     if #entries > RagdollTracker.maxDisplay then
         local trimmed = {}
-        for i = 1, RagdollTracker.maxDisplay do
-            trimmed[i] = entries[i]
-        end
+        for i = 1, RagdollTracker.maxDisplay do trimmed[i] = entries[i] end
         entries = trimmed
     end
-
     local cam = workspace.CurrentCamera
     local vpSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
-
     local xStart = 20
     local yStart = math.floor(vpSize.Y * 0.35)
     local lineHeight = 44
     local panelW = 280
     local panelH = 40
-
     for i = 1, #entries do
         local entry = entries[i]
         local baseIdx = (i - 1) * 5 + 1
         local y = yStart + (i - 1) * lineHeight
-
         EnsureTrackerSlot(baseIdx)
-
         local bg = RagdollTracker.drawn[baseIdx]
         local nameText = RagdollTracker.drawn[baseIdx + 1]
         local timeText = RagdollTracker.drawn[baseIdx + 2]
         local barBg = RagdollTracker.drawn[baseIdx + 3]
         local barFill = RagdollTracker.drawn[baseIdx + 4]
-
-        bg.ZIndex = 0
-        nameText.ZIndex = 7
-        timeText.ZIndex = 7
-        barBg.ZIndex = 5
-        barFill.ZIndex = 6
-
+        bg.ZIndex = 0; nameText.ZIndex = 7; timeText.ZIndex = 7
+        barBg.ZIndex = 5; barFill.ZIndex = 6
         local p = math.clamp(entry.progress or 0, 0, 1)
         local r, g, b
         if p < 0.5 then
-            local t = p / 0.5
-            r = 255
-            g = math.floor(70 + (180 - 70) * t)
-            b = math.floor(70 * (1 - t))
+            local t = p / 0.5; r = 255; g = math.floor(70 + (180 - 70) * t); b = math.floor(70 * (1 - t))
         elseif p < 0.8 then
-            local t = (p - 0.5) / 0.3
-            r = 255
-            g = math.floor(180 + (230 - 180) * t)
-            b = 0
+            local t = (p - 0.5) / 0.3; r = 255; g = math.floor(180 + (230 - 180) * t); b = 0
         else
-            local t = (p - 0.8) / 0.2
-            r = math.floor(230 * (1 - t))
-            g = 255
-            b = math.floor(60 * t)
+            local t = (p - 0.8) / 0.2; r = math.floor(230 * (1 - t)); g = 255; b = math.floor(60 * t)
         end
         local labelColor = Color3.fromRGB(r, g, b)
-
-        bg.Position = Vector2.new(xStart, y)
-        bg.Size = Vector2.new(panelW, panelH)
-        bg.Filled = false
-        bg.Thickness = 1
-        bg.Transparency = 0.7
-        if p >= 0.8 then
-            bg.Color = Color3.fromRGB(60, 200, 60)
-        elseif entry.reason == "CAPTURED" then
-            bg.Color = Color3.fromRGB(200, 120, 30)
-        else
-            bg.Color = Color3.fromRGB(200, 60, 60)
-        end
+        bg.Position = Vector2.new(xStart, y); bg.Size = Vector2.new(panelW, panelH)
+        bg.Filled = false; bg.Thickness = 1; bg.Transparency = 0.7
+        if p >= 0.8 then bg.Color = Color3.fromRGB(60, 200, 60)
+        elseif entry.reason == "CAPTURED" then bg.Color = Color3.fromRGB(200, 120, 30)
+        else bg.Color = Color3.fromRGB(200, 60, 60) end
         bg.Visible = true
-
-        local pulse = 0
         if p >= 0.9 then
-            pulse = (math.sin(tick() * 12) + 1) * 0.5
+            local pulse = (math.sin(tick() * 12) + 1) * 0.5
             local boost = 0.3 + 0.7 * pulse
             labelColor = Color3.fromRGB(
                 math.min(255, math.floor(r + (255 - r) * boost)),
                 math.min(255, math.floor(g + (255 - g) * boost)),
-                math.min(255, math.floor(b + (255 - b) * boost))
-            )
+                math.min(255, math.floor(b + (255 - b) * boost)))
         end
-
         local stateLabel = entry.reason
-        if p >= 0.9 then
-            stateLabel = entry.reason .. " (ALMOST UP)"
-        end
-
+        if p >= 0.9 then stateLabel = entry.reason .. " (ALMOST UP)" end
         nameText.Text = "[" .. stateLabel .. "] " .. entry.name
         nameText.Position = Vector2.new(xStart + 8, y + 6)
         nameText.Color = labelColor
         nameText.Visible = true
-
-        local pctText = string.format("%.0f%%", p * 100)
-        timeText.Text = pctText
+        timeText.Text = string.format("%.0f%%", p * 100)
         timeText.Position = Vector2.new(xStart + panelW - 52, y + 8)
         timeText.Color = labelColor
         timeText.Visible = true
-
-        local barW = panelW - 16
-        local barH = 8
-        local barX = xStart + 8
-        local barY = y + panelH - 12
-
-        barBg.Position = Vector2.new(barX, barY)
-        barBg.Size = Vector2.new(barW, barH)
-        barBg.Color = Color3.fromRGB(70, 70, 80)
-        barBg.Transparency = 0.0
-        barBg.Filled = true
-        barBg.Visible = true
-
+        local barW = panelW - 16; local barH = 8
+        local barX = xStart + 8; local barY = y + panelH - 12
+        barBg.Position = Vector2.new(barX, barY); barBg.Size = Vector2.new(barW, barH)
+        barBg.Color = Color3.fromRGB(70, 70, 80); barBg.Transparency = 0.0
+        barBg.Filled = true; barBg.Visible = true
         local fillW = math.max(4, math.floor(barW * p))
-        barFill.Position = Vector2.new(barX, barY)
-        barFill.Size = Vector2.new(fillW, barH)
-        barFill.Color = labelColor
-        barFill.Transparency = 0.0
-        barFill.Filled = true
-        barFill.Visible = true
+        barFill.Position = Vector2.new(barX, barY); barFill.Size = Vector2.new(fillW, barH)
+        barFill.Color = labelColor; barFill.Transparency = 0.0
+        barFill.Filled = true; barFill.Visible = true
     end
-
     local usedSlots = #entries * 5
-    for i = usedSlots + 1, #RagdollTracker.drawn do
-        RagdollTracker.drawn[i].Visible = false
-    end
+    for i = usedSlots + 1, #RagdollTracker.drawn do RagdollTracker.drawn[i].Visible = false end
 end
 
--- =====================================================================
--- BEAST POWER
--- =====================================================================
 local function GetBeastPowerInfo(beastCharacter)
-    if not beastCharacter or not beastCharacter:IsA("Model") then
-        return "Unknown", 0
-    end
-    local powerName = "Unknown"
-    local percent = 0
+    if not beastCharacter or not beastCharacter:IsA("Model") then return "Unknown", 0 end
+    local powerName = "Unknown"; local percent = 0
     pcall(function()
         local cp = ReplicatedStorage:FindFirstChild("CurrentPower")
         if cp then powerName = cp.Value or "Unknown" end
@@ -655,9 +501,7 @@ local function GetBeastPowerInfo(beastCharacter)
     pcall(function()
         local bp = beastCharacter:FindFirstChild("BeastPowers")
         if bp then
-            local pp = bp:FindFirstChild("PowerProgressPercent")
-                    or bp:FindFirstChild("Progress")
-                    or bp:FindFirstChild("Power")
+            local pp = bp:FindFirstChild("PowerProgressPercent") or bp:FindFirstChild("Progress") or bp:FindFirstChild("Power")
             if pp and pp.Value ~= nil then percent = tonumber(pp.Value) or 0 end
         end
     end)
@@ -671,17 +515,14 @@ local function GetBeastPowerInfo(beastCharacter)
 end
 
 local function GetPowerColor(powerName, progress)
-    if powerName == "Runner"  then return Color3.fromRGB(100, 255, 100) end
+    if powerName == "Runner" then return Color3.fromRGB(100, 255, 100) end
     if powerName == "Stalker" then return Color3.fromRGB(255, 100, 100) end
-    if powerName == "Seer"    then return Color3.fromRGB(100, 100, 255) end
+    if powerName == "Seer" then return Color3.fromRGB(100, 100, 255) end
     if progress >= 0.95 then return Color3.fromRGB(0, 255, 50) end
-    if progress > 0    then return Color3.fromRGB(255, 180, 0) end
+    if progress > 0 then return Color3.fromRGB(255, 180, 0) end
     return Color3.fromRGB(150, 150, 150)
 end
 
--- =====================================================================
--- SCREEN COLOR
--- =====================================================================
 local function GetComputerScreenState(color)
     if not color then return "idle" end
     local r, g, b = color.R, color.G, color.B
@@ -695,50 +536,30 @@ local function GetComputerScreenState(color)
     return "done"
 end
 
--- =====================================================================
--- MAP SCANNING
--- =====================================================================
 local CurrentMapRoot = nil
-local LastComputerMapCheck = 0
-
 local DoorCache = { sd = {}, dd = {}, dw = {}, ed = {} }
 local ComputerCache = {}
 local ComputerAnchorCache = {}
 local FreezePodCache = {}
 local ExitDoorColorCache = {}
-
 local DoorSlabParts = {}
 local DoorBaselinePos = {}
 local DoorStateCache = {}
-
 local ComputerProgressCache = {}
 local ComputerHackerCache = {}
 local ComputerProgressMap = nil
 
 local function ClearMapCaches()
-    DoorCache.sd = {}
-    DoorCache.dd = {}
-    DoorCache.dw = {}
-    DoorCache.ed = {}
-    ComputerCache = {}
-    ComputerAnchorCache = {}
-    FreezePodCache = {}
-    ExitDoorColorCache = {}
-    DoorSlabParts = {}
-    DoorBaselinePos = {}
-    DoorStateCache = {}
-    ComputerProgressCache = {}
-    ComputerHackerCache = {}
-    ComputerProgressMap = nil
-    PLAYER_STATE_CACHE = {}
-    RagdollTracker.active = {}
+    DoorCache.sd = {}; DoorCache.dd = {}; DoorCache.dw = {}; DoorCache.ed = {}
+    ComputerCache = {}; ComputerAnchorCache = {}; FreezePodCache = {}
+    ExitDoorColorCache = {}; DoorSlabParts = {}; DoorBaselinePos = {}
+    DoorStateCache = {}; ComputerProgressCache = {}; ComputerHackerCache = {}
+    ComputerProgressMap = nil; PLAYER_STATE_CACHE = {}; RagdollTracker.active = {}
 end
 
 local function FindMapRoot()
     for _, obj in ipairs(workspace:GetChildren()) do
-        if obj and obj:FindFirstChild("ComputerTable") then
-            return obj
-        end
+        if obj and obj:FindFirstChild("ComputerTable") then return obj end
     end
     return nil
 end
@@ -746,11 +567,8 @@ end
 local function PickDoorAnchor(model)
     for _, name in ipairs({ "DoorTrigger", "ExitDoorTrigger", "ExitArea" }) do
         local trig = model:FindFirstChild(name)
-        if trig and IsRealPart(trig) then
-            return trig
-        end
+        if trig and IsRealPart(trig) then return trig end
     end
-
     for _, slabName in ipairs({ "Door", "DoorR", "DoorL" }) do
         local slab = model:FindFirstChild(slabName)
         if slab then
@@ -759,7 +577,6 @@ local function PickDoorAnchor(model)
             end
         end
     end
-
     for _, child in ipairs(model:GetDescendants()) do
         if IsRealPart(child) then return child end
     end
@@ -768,30 +585,20 @@ end
 
 local function RebuildMapCaches()
     local root = FindMapRoot()
-    if root ~= CurrentMapRoot then
-        CurrentMapRoot = root
-        ClearMapCaches()
-    end
+    if root ~= CurrentMapRoot then CurrentMapRoot = root; ClearMapCaches() end
     if not CurrentMapRoot then return end
-
     for _, obj in ipairs(CurrentMapRoot:GetChildren()) do
         if obj:IsA("Model") then
             local n = obj.Name
             if n == "SingleDoor" then
                 local anchor = PickDoorAnchor(obj)
-                if anchor then
-                    table.insert(DoorCache.sd, { anchor = anchor, model = obj })
-                end
+                if anchor then table.insert(DoorCache.sd, { anchor = anchor, model = obj }) end
             elseif n == "DoubleDoor" then
                 local anchor = PickDoorAnchor(obj)
-                if anchor then
-                    table.insert(DoorCache.dd, { anchor = anchor, model = obj })
-                end
+                if anchor then table.insert(DoorCache.dd, { anchor = anchor, model = obj }) end
             elseif n == "Doorway" or n == "DoorWAY" then
                 local anchor = PickDoorAnchor(obj)
-                if anchor then
-                    table.insert(DoorCache.dw, { anchor = anchor, model = obj })
-                end
+                if anchor then table.insert(DoorCache.dw, { anchor = anchor, model = obj }) end
             elseif n == "ExitDoor" then
                 local anchor = PickDoorAnchor(obj)
                 if anchor then
@@ -809,21 +616,17 @@ local function RebuildMapCaches()
                 if screen and IsRealPart(screen) then
                     table.insert(ComputerCache, screen)
                     local trig = obj:FindFirstChild("Trigger")
-                    ComputerAnchorCache[screen] =
-                        (trig and IsRealPart(trig)) and trig or screen
+                    ComputerAnchorCache[screen] = (trig and IsRealPart(trig)) and trig or screen
                 end
             elseif n == "FreezePod" then
                 local anchor = obj:FindFirstChild("BasePart")
-                if anchor and IsRealPart(anchor) then
-                    table.insert(FreezePodCache, anchor)
-                end
+                if anchor and IsRealPart(anchor) then table.insert(FreezePodCache, anchor) end
             end
         end
     end
 end
 
 RebuildMapCaches()
-
 local LastMapCheckTick = 0
 local MAP_CHECK_INTERVAL = 0.5
 
@@ -831,23 +634,12 @@ local function CheckForMapChange()
     local now = tick()
     if (now - LastMapCheckTick) < MAP_CHECK_INTERVAL then return end
     LastMapCheckTick = now
-
-    if not CurrentMapRoot or CurrentMapRoot.Parent ~= workspace then
-        RebuildMapCaches()
-        return
-    end
-
+    if not CurrentMapRoot or CurrentMapRoot.Parent ~= workspace then RebuildMapCaches(); return end
     for _, obj in ipairs(workspace:GetChildren()) do
-        if obj and obj:FindFirstChild("ComputerTable") and obj ~= CurrentMapRoot then
-            RebuildMapCaches()
-            return
-        end
+        if obj and obj:FindFirstChild("ComputerTable") and obj ~= CurrentMapRoot then RebuildMapCaches(); return end
     end
 end
 
--- =====================================================================
--- CHARACTER CACHE
--- =====================================================================
 local FtfCharacterCache = {}
 local LastFtfCharacterCacheRefresh = 0
 local FtfCharacterMeta = {}
@@ -864,73 +656,48 @@ end
 
 local function RefreshFtfCharacterCache(force)
     local now = tick()
-    if not force and (now - LastFtfCharacterCacheRefresh) < 0.5 then
-        return FtfCharacterCache
-    end
+    if not force and (now - LastFtfCharacterCacheRefresh) < 0.5 then return FtfCharacterCache end
     local results, seen = {}, {}
     local meta = {}
     for _, p in ipairs(Players:GetPlayers()) do
         local m = p.Character
-        if not m or not m:IsDescendantOf(workspace) then
-            m = workspace:FindFirstChild(p.Name)
-        end
+        if not m or not m:IsDescendantOf(workspace) then m = workspace:FindFirstChild(p.Name) end
         if m and IsFtfCharacterModel(m) and not seen[m] then
             seen[m] = true
             table.insert(results, m)
             local root = m:FindFirstChild("HumanoidRootPart")
             local head = m:FindFirstChild("Head") or root
-            meta[m] = {
-                root = root,
-                head = head,
-                isBeast = IsBeastModel(m),
-                player = p,
-            }
+            meta[m] = { root = root, head = head, isBeast = IsBeastModel(m), player = p }
         end
     end
-    FtfCharacterCache = results
-    FtfCharacterMeta = meta
-    LastFtfCharacterCacheRefresh = now
+    FtfCharacterCache = results; FtfCharacterMeta = meta; LastFtfCharacterCacheRefresh = now
     return results
 end
 
-local function GetFtfCharacterTargets()
-    return RefreshFtfCharacterCache(false)
-end
+local function GetFtfCharacterTargets() return RefreshFtfCharacterCache(false) end
 
--- =====================================================================
--- DOOR STATE
--- =====================================================================
 local DOOR_OPEN_DISPLACE = 0.3
 local DOOR_STATE_INTERVAL = 0.05
 
 local function GetDoorSlabParts(model)
     local cached = DoorSlabParts[model]
     if cached and #cached > 0 and cached[1].Parent then return cached end
-
     local parts = {}
     for _, slabName in ipairs({ "Door", "DoorR", "DoorL" }) do
         local slab = model:FindFirstChild(slabName)
         if slab then
             for _, child in ipairs(slab:GetDescendants()) do
-                if IsRealPart(child) then
-                    table.insert(parts, child)
-                end
+                if IsRealPart(child) then table.insert(parts, child) end
             end
         end
     end
-
     if #parts == 0 then
-        local EXCLUDE = {
-            DoorTrigger = true, ExitDoorTrigger = true, ExitArea = true,
-            Frame = true, Light = true, Hinge = true, DoorBarrier = true,
-        }
+        local EXCLUDE = { DoorTrigger = true, ExitDoorTrigger = true, ExitArea = true,
+            Frame = true, Light = true, Hinge = true, DoorBarrier = true }
         for _, child in ipairs(model:GetDescendants()) do
-            if IsRealPart(child) and not EXCLUDE[child.Name] then
-                table.insert(parts, child)
-            end
+            if IsRealPart(child) and not EXCLUDE[child.Name] then table.insert(parts, child) end
         end
     end
-
     DoorSlabParts[model] = parts
     return parts
 end
@@ -945,10 +712,7 @@ local function AveragePosition(parts)
             local okY, y = pcall(function() return pos.Y end)
             local okZ, z = pcall(function() return pos.Z end)
             if okX and okY and okZ and type(x) == "number" then
-                sumX = sumX + x
-                sumY = sumY + y
-                sumZ = sumZ + z
-                n = n + 1
+                sumX = sumX + x; sumY = sumY + y; sumZ = sumZ + z; n = n + 1
             end
         end
     end
@@ -958,50 +722,32 @@ end
 
 local function IsDoorOpen(model)
     if not model then return false end
-
     local now = tick()
     local cached = DoorStateCache[model]
-    if cached and (now - cached.t) < DOOR_STATE_INTERVAL then
-        return cached.open
-    end
-
+    if cached and (now - cached.t) < DOOR_STATE_INTERVAL then return cached.open end
     local parts = GetDoorSlabParts(model)
-    if #parts == 0 then
-        DoorStateCache[model] = { open = false, t = now }
-        return false
-    end
-
+    if #parts == 0 then DoorStateCache[model] = { open = false, t = now }; return false end
     local avgPos = AveragePosition(parts)
-    if not avgPos then
-        DoorStateCache[model] = { open = false, t = now }
-        return false
-    end
-
+    if not avgPos then DoorStateCache[model] = { open = false, t = now }; return false end
     local baseline = DoorBaselinePos[model]
     if not baseline then
         DoorBaselinePos[model] = avgPos
         DoorStateCache[model] = { open = false, t = now }
         return false
     end
-
     local dx = avgPos.X - baseline.X
     local dy = avgPos.Y - baseline.Y
     local dz = avgPos.Z - baseline.Z
     local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-
     local isOpen = dist > DOOR_OPEN_DISPLACE
     DoorStateCache[model] = { open = isOpen, t = now }
     return isOpen
 end
 
--- =====================================================================
--- NPC ESP
--- =====================================================================
 local function UpdateNpcEsp()
     local playerEspEnabled = State.npc_player_esp
     local beastEspEnabled = State.npc_beast_esp
     local tracersEnabled = State.show_tracers
-
     if not playerEspEnabled and not beastEspEnabled and not tracersEnabled then
         for key, _ in pairs(ActiveEspKeys.npc or {}) do
             local e = EspObjects[key]; if e then HideEspEntry(e) end
@@ -1011,34 +757,26 @@ local function UpdateNpcEsp()
         ActiveTracerKeys = {}
         return
     end
-
     local localCharacter = LocalPlayer and LocalPlayer.Character or nil
-    local seen = {}
-    local seenTracers = {}
+    local seen = {}; local seenTracers = {}
     local cam = workspace.CurrentCamera
     local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
     local targets = GetFtfCharacterTargets()
-
     RefreshPlayerProgressCache(false)
-
     local vpSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
     local tracerOriginX = vpSize.X / 2
     local tracerOriginY = 0
-
     for i = 1, #targets do
         local obj = targets[i]
-        local isLocalModel = obj == localCharacter
-            or (LocalPlayer and tostring(obj.Name) == tostring(LocalPlayer.Name))
+        local isLocalModel = obj == localCharacter or (LocalPlayer and tostring(obj.Name) == tostring(LocalPlayer.Name))
         if not isLocalModel then
             local meta = FtfCharacterMeta[obj]
             if meta then
                 local isBeast = meta.isBeast
                 local showEsp = (isBeast and beastEspEnabled) or ((not isBeast) and playerEspEnabled)
                 local showTracer = tracersEnabled and not isBeast
-
                 if showEsp or showTracer then
-                    local root = meta.root
-                    local head = meta.head
+                    local root = meta.root; local head = meta.head
                     if root and head and cam then
                         local hp, hv = GetWorldToScreen(head.Position + Vector3.new(0, 0.6, 0))
                         local fp, fv = GetWorldToScreen(root.Position - Vector3.new(0, 3.2, 0))
@@ -1047,57 +785,37 @@ local function UpdateNpcEsp()
                             local e = GetEspEntry(key)
                             seen[key] = true
                             ActiveEspKeys.npc[key] = true
-
                             local bh = math.max(36, math.abs(fp.Y - hp.Y) * 1.25)
                             local bw = math.max(22, math.floor(bh * 0.62))
                             local bx = math.floor(hp.X - bw / 2)
                             local by = math.floor(hp.Y)
                             local espColor = isBeast and Color3.fromRGB(255, 88, 88) or Color3.fromRGB(54, 248, 87)
-
                             if showEsp and State.show_boxes then
-                                e.box.Position = Vector2.new(bx, by)
-                                e.box.Size = Vector2.new(bw, bh)
-                                e.box.Color = espColor
-                                e.box.Thickness = isBeast and 1 or 2
-                                e.box.Visible = true
-                            else
-                                e.box.Visible = false
-                            end
-
+                                e.box.Position = Vector2.new(bx, by); e.box.Size = Vector2.new(bw, bh)
+                                e.box.Color = espColor; e.box.Thickness = isBeast and 1 or 2; e.box.Visible = true
+                            else e.box.Visible = false end
                             if showTracer then
                                 local tracerKey = "tr:" .. key
                                 local tr = GetTracerEntry(tracerKey)
-                                seenTracers[tracerKey] = true
-                                ActiveTracerKeys[tracerKey] = true
-
-                                local endX = bx + bw / 2
-                                local endY = by
-
+                                seenTracers[tracerKey] = true; ActiveTracerKeys[tracerKey] = true
                                 tr.From = Vector2.new(tracerOriginX, tracerOriginY)
-                                tr.To = Vector2.new(endX, endY)
-                                tr.Color = Color3.fromRGB(80, 255, 80)
-                                tr.Thickness = 3
-                                tr.Transparency = 1
-                                tr.ZIndex = 999
-                                tr.Visible = true
+                                tr.To = Vector2.new(bx + bw / 2, by)
+                                tr.Color = Color3.fromRGB(80, 255, 80); tr.Thickness = 3
+                                tr.Transparency = 1; tr.ZIndex = 999; tr.Visible = true
                             else
                                 local tracerKey = "tr:" .. key
                                 local tr = TracerObjects[tracerKey]
                                 if tr then HideTracerEntry(tr) end
                                 ActiveTracerKeys[tracerKey] = nil
                             end
-
                             if showEsp then
                                 if isBeast then
                                     local pName, pPct = GetBeastPowerInfo(obj)
                                     local pColor = GetPowerColor(pName, pPct)
                                     local displayText = ""
                                     if State.show_power_name and pName and pName ~= "Unknown" then displayText = pName end
-                                    if State.show_beast_label and displayText ~= "" then
-                                        displayText = displayText .. " | " .. (obj.Name or "Beast")
-                                    elseif State.show_beast_label then
-                                        displayText = obj.Name or "Beast"
-                                    end
+                                    if State.show_beast_label and displayText ~= "" then displayText = displayText .. " | " .. (obj.Name or "Beast")
+                                    elseif State.show_beast_label then displayText = obj.Name or "Beast" end
                                     if State.show_distance then
                                         local d = math.floor((camPos - root.Position).Magnitude)
                                         displayText = (displayText ~= "" and (displayText .. " [" .. d .. "m]")) or ("[" .. d .. "m]")
@@ -1106,58 +824,37 @@ local function UpdateNpcEsp()
                                         local stateText, stateColor = GetPlayerState(meta.player)
                                         if stateText then
                                             displayText = displayText .. " [" .. stateText .. "]"
-                                            if State.player_state_color and stateColor then
-                                                pColor = stateColor
-                                            end
+                                            if State.player_state_color and stateColor then pColor = stateColor end
                                         end
                                     end
                                     if displayText ~= "" then
                                         e.label.Text = displayText
                                         e.label.Position = Vector2.new(math.floor(hp.X), math.floor(by - 20))
-                                        e.label.Color = pColor
-                                        e.label.Size = State.power_font_size
-                                        e.label.Visible = true
-                                    else
-                                        e.label.Visible = false
-                                    end
+                                        e.label.Color = pColor; e.label.Size = State.power_font_size; e.label.Visible = true
+                                    else e.label.Visible = false end
                                     if State.show_power_bar then
                                         local barY = by + bh + 4
                                         local barW = math.max(20, math.floor(bw * (State.bar_width / 100)))
                                         local barH = math.max(4, State.bar_height)
                                         local barX = math.floor(hp.X - barW / 2)
-                                        e.barBg.Position = Vector2.new(barX, barY)
-                                        e.barBg.Size = Vector2.new(barW, barH)
-                                        e.barBg.Color = Color3.fromRGB(20, 20, 25)
-                                        e.barBg.Transparency = 0.2
-                                        e.barBg.Visible = true
+                                        e.barBg.Position = Vector2.new(barX, barY); e.barBg.Size = Vector2.new(barW, barH)
+                                        e.barBg.Color = Color3.fromRGB(20, 20, 25); e.barBg.Transparency = 0.2; e.barBg.Visible = true
                                         local fw = math.max(1, math.floor(barW * math.clamp(pPct, 0, 1)))
-                                        local fc = pPct >= 0.95 and Color3.fromRGB(0,255,50)
-                                                or (pPct > 0 and Color3.fromRGB(255,180,0) or Color3.fromRGB(100,100,100))
-                                        e.barFill.Position = Vector2.new(barX, barY)
-                                        e.barFill.Size = Vector2.new(fw, barH)
-                                        e.barFill.Color = fc
-                                        e.barFill.Transparency = 0.4
-                                        e.barFill.Visible = true
-                                        e.borderBar.Position = Vector2.new(barX - 1, barY - 1)
-                                        e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
-                                        e.borderBar.Color = Color3.fromRGB(255, 255, 255)
-                                        e.borderBar.Transparency = 0.5
-                                        e.borderBar.Thickness = 1
-                                        e.borderBar.Visible = true
+                                        local fc = pPct >= 0.95 and Color3.fromRGB(0,255,50) or (pPct > 0 and Color3.fromRGB(255,180,0) or Color3.fromRGB(100,100,100))
+                                        e.barFill.Position = Vector2.new(barX, barY); e.barFill.Size = Vector2.new(fw, barH)
+                                        e.barFill.Color = fc; e.barFill.Transparency = 0.4; e.barFill.Visible = true
+                                        e.borderBar.Position = Vector2.new(barX - 1, barY - 1); e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
+                                        e.borderBar.Color = Color3.fromRGB(255, 255, 255); e.borderBar.Transparency = 0.5
+                                        e.borderBar.Thickness = 1; e.borderBar.Visible = true
                                         if State.show_power_percent then
                                             e.percentLabel.Text = string.format("%.0f%%", pPct * 100)
                                             e.percentLabel.Position = Vector2.new(math.floor(hp.X), math.floor(barY + barH + 10))
                                             e.percentLabel.Color = Color3.fromRGB(255, 255, 255)
-                                            e.percentLabel.Size = math.max(13, State.power_font_size - 1)
-                                            e.percentLabel.Visible = true
-                                        else
-                                            e.percentLabel.Visible = false
-                                        end
+                                            e.percentLabel.Size = math.max(13, State.power_font_size - 1); e.percentLabel.Visible = true
+                                        else e.percentLabel.Visible = false end
                                     else
-                                        e.barBg.Visible = false
-                                        e.barFill.Visible = false
-                                        e.percentLabel.Visible = false
-                                        e.borderBar.Visible = false
+                                        e.barBg.Visible = false; e.barFill.Visible = false
+                                        e.percentLabel.Visible = false; e.borderBar.Visible = false
                                     end
                                 else
                                     local player = meta.player
@@ -1172,69 +869,44 @@ local function UpdateNpcEsp()
                                             local stateText, stateColor = GetPlayerState(player)
                                             if stateText then
                                                 text = text .. " [" .. stateText .. "]"
-                                                if State.player_state_color and stateColor then
-                                                    e.label.Color = stateColor
-                                                else
-                                                    e.label.Color = espColor
-                                                end
-                                            else
-                                                e.label.Color = espColor
-                                            end
-                                        else
-                                            e.label.Color = espColor
-                                        end
+                                                if State.player_state_color and stateColor then e.label.Color = stateColor
+                                                else e.label.Color = espColor end
+                                            else e.label.Color = espColor end
+                                        else e.label.Color = espColor end
                                         e.label.Text = text
                                         e.label.Position = Vector2.new(math.floor(hp.X), math.floor(by - 16))
-                                        e.label.Size = 14
-                                        e.label.Visible = true
-                                    else
-                                        e.label.Visible = false
-                                    end
+                                        e.label.Size = 14; e.label.Visible = true
+                                    else e.label.Visible = false end
                                     if State.show_player_progress then
                                         local barY = by + bh + 4
                                         local barW = math.max(20, math.floor(bw * 1.2))
                                         local barH = math.max(4, State.bar_height)
                                         local barX = math.floor(hp.X - barW / 2)
-                                        e.barBg.Position = Vector2.new(barX, barY)
-                                        e.barBg.Size = Vector2.new(barW, barH)
-                                        e.barBg.Color = Color3.fromRGB(20, 20, 25)
-                                        e.barBg.Transparency = 0.2
-                                        e.barBg.Visible = true
+                                        e.barBg.Position = Vector2.new(barX, barY); e.barBg.Size = Vector2.new(barW, barH)
+                                        e.barBg.Color = Color3.fromRGB(20, 20, 25); e.barBg.Transparency = 0.2; e.barBg.Visible = true
                                         local fw = math.max(2, math.floor(barW * math.clamp(playerProgress, 0, 1)))
                                         local fc
                                         if playerProgress >= 0.95 then fc = Color3.fromRGB(0,255,50)
                                         elseif playerProgress > 0.5 then fc = Color3.fromRGB(255,180,0)
                                         elseif playerProgress > 0 then fc = Color3.fromRGB(255,100,100)
                                         else fc = Color3.fromRGB(60,60,60); fw = 2 end
-                                        e.barFill.Position = Vector2.new(barX, barY)
-                                        e.barFill.Size = Vector2.new(fw, barH)
-                                        e.barFill.Color = fc
-                                        e.barFill.Transparency = 0.4
-                                        e.barFill.Visible = true
-                                        e.borderBar.Position = Vector2.new(barX - 1, barY - 1)
-                                        e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
-                                        e.borderBar.Color = Color3.fromRGB(255, 255, 255)
-                                        e.borderBar.Transparency = 0.5
-                                        e.borderBar.Thickness = 1
-                                        e.borderBar.Visible = true
+                                        e.barFill.Position = Vector2.new(barX, barY); e.barFill.Size = Vector2.new(fw, barH)
+                                        e.barFill.Color = fc; e.barFill.Transparency = 0.4; e.barFill.Visible = true
+                                        e.borderBar.Position = Vector2.new(barX - 1, barY - 1); e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
+                                        e.borderBar.Color = Color3.fromRGB(255, 255, 255); e.borderBar.Transparency = 0.5
+                                        e.borderBar.Thickness = 1; e.borderBar.Visible = true
                                         e.percentLabel.Text = (playerProgress >= 1) and "DONE" or string.format("%.0f%%", playerProgress * 100)
                                         e.percentLabel.Position = Vector2.new(math.floor(hp.X), math.floor(barY + barH + 10))
                                         e.percentLabel.Color = playerProgress > 0 and Color3.fromRGB(255,255,255) or Color3.fromRGB(100,100,100)
-                                        e.percentLabel.Size = 13
-                                        e.percentLabel.Visible = true
+                                        e.percentLabel.Size = 13; e.percentLabel.Visible = true
                                     else
-                                        e.barBg.Visible = false
-                                        e.barFill.Visible = false
-                                        e.percentLabel.Visible = false
-                                        e.borderBar.Visible = false
+                                        e.barBg.Visible = false; e.barFill.Visible = false
+                                        e.percentLabel.Visible = false; e.borderBar.Visible = false
                                     end
                                 end
                             else
-                                e.label.Visible = false
-                                e.barBg.Visible = false
-                                e.barFill.Visible = false
-                                e.percentLabel.Visible = false
-                                e.borderBar.Visible = false
+                                e.label.Visible = false; e.barBg.Visible = false; e.barFill.Visible = false
+                                e.percentLabel.Visible = false; e.borderBar.Visible = false
                             end
                         else
                             local key = tostring(obj)
@@ -1259,14 +931,11 @@ local function UpdateNpcEsp()
             end
         end
     end
-
     for key, e in pairs(EspObjects or {}) do
         if ActiveEspKeys.npc[key] and not seen[key] then
-            HideEspEntry(e)
-            ActiveEspKeys.npc[key] = nil
+            HideEspEntry(e); ActiveEspKeys.npc[key] = nil
         end
     end
-
     for tkey, _ in pairs(ActiveTracerKeys) do
         if not seenTracers[tkey] then
             local tr = TracerObjects[tkey]
@@ -1276,16 +945,11 @@ local function UpdateNpcEsp()
     end
 end
 
--- =====================================================================
--- COMPUTER ESP
--- =====================================================================
 local function GetComputerProgressKey(trigger)
     if not trigger then return nil end
-    local addr = nil
-    pcall(function() addr = trigger.Address end)
+    local addr = nil; pcall(function() addr = trigger.Address end)
     if addr ~= nil then return "pcaddr:" .. tostring(addr) end
-    local full = nil
-    pcall(function() full = trigger:GetFullName() end)
+    local full = nil; pcall(function() full = trigger:GetFullName() end)
     if full then return "pcname:" .. tostring(full) end
     return "pcobj:" .. tostring(trigger)
 end
@@ -1298,20 +962,14 @@ local function UpdateComputerEsp()
         ActiveEspKeys.pc = {}
         return
     end
-
     local seen = {}
     local targets = ComputerCache
     local cam = workspace.CurrentCamera
     local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
-
     if ComputerProgressMap ~= CurrentMapRoot then
-        ComputerProgressCache = {}
-        ComputerHackerCache = {}
-        ComputerProgressMap = CurrentMapRoot
+        ComputerProgressCache = {}; ComputerHackerCache = {}; ComputerProgressMap = CurrentMapRoot
     end
-
     RefreshPlayerProgressCache(false)
-
     local pcAssignment = {}
     for _, player in ipairs(Players:GetPlayers()) do
         local char = player.Character
@@ -1330,10 +988,7 @@ local function UpdateComputerEsp()
                             local anchor = ComputerAnchorCache[comp]
                             if anchor then
                                 local d = (playerPos - anchor.Position).Magnitude
-                                if d < bestDist and d <= 8 then
-                                    bestDist = d
-                                    bestIdx = idx
-                                end
+                                if d < bestDist and d <= 8 then bestDist = d; bestIdx = idx end
                             end
                         end
                     end
@@ -1347,7 +1002,6 @@ local function UpdateComputerEsp()
             end
         end
     end
-
     for index = 1, #targets do
         local trigger = targets[index]
         if trigger and trigger.Parent and trigger:IsDescendantOf(workspace) then
@@ -1355,44 +1009,28 @@ local function UpdateComputerEsp()
             local key = "pc:" .. tostring(pcKey)
             local e = GetEspEntry(key)
             local sp, vis = GetWorldToScreen(trigger.Position + Vector3.new(0, 1.5, 0))
-            seen[key] = true
-            ActiveEspKeys.pc[key] = true
-
+            seen[key] = true; ActiveEspKeys.pc[key] = true
             local assign = pcAssignment[index]
             local currentRaw = assign and assign.raw or 0
             local currentHackerName = assign and assign.player.Name or nil
-
             local saved = ComputerProgressCache[pcKey] or 0
             local lastHacker = ComputerHackerCache[pcKey]
-
             if assign then
-                if currentRaw > saved then
-                    saved = currentRaw
-                    ComputerProgressCache[pcKey] = saved
-                end
+                if currentRaw > saved then saved = currentRaw; ComputerProgressCache[pcKey] = saved end
                 ComputerHackerCache[pcKey] = assign.player.Name
             end
-
             local screenState = GetComputerScreenState(trigger.Color)
-            if screenState == "done" then
-                saved = 1
-                ComputerProgressCache[pcKey] = 1
-            end
-
+            if screenState == "done" then saved = 1; ComputerProgressCache[pcKey] = 1 end
             if State.hide_completed_pcs and saved >= 1 then
-                HideEspEntry(e)
-                ActiveEspKeys.pc[key] = nil
-                seen[key] = nil
+                HideEspEntry(e); ActiveEspKeys.pc[key] = nil; seen[key] = nil
             else
                 local pos = trigger.Position
-                if IsTooFar(camPos, pos) then
-                    HideEspEntry(e)
+                if IsTooFar(camPos, pos) then HideEspEntry(e)
                 else
                     if vis and sp then
                         local w, h = 30, 30
                         local bx = math.floor(sp.X - w / 2)
                         local by = math.floor(sp.Y - h / 2)
-
                         local sc = trigger.Color
                         local r, g, b = sc.R, sc.G, sc.B
                         if r <= 1 and g <= 1 and b <= 1 then
@@ -1403,67 +1041,41 @@ local function UpdateComputerEsp()
                         local labelText = "PC"
                         local espColor = Color3.fromRGB(r, g, b)
                         if r == 196 and g == 40 and b == 28 then
-                            labelText = "PC Errored"
-                            espColor = Color3.fromRGB(255, 50, 50)
+                            labelText = "PC Errored"; espColor = Color3.fromRGB(255, 50, 50)
                         end
-
                         local hackerName = currentHackerName or lastHacker
-
-                        e.box.Position = Vector2.new(bx, by)
-                        e.box.Size = Vector2.new(w, h)
-                        e.box.Color = espColor
-                        e.box.Visible = true
-
+                        e.box.Position = Vector2.new(bx, by); e.box.Size = Vector2.new(w, h)
+                        e.box.Color = espColor; e.box.Visible = true
                         if State.show_labels then
                             if screenState == "done" then
-                                e.label.Text = "PC (HACKED)"
-                                e.label.Color = Color3.fromRGB(0, 255, 80)
+                                e.label.Text = "PC (HACKED)"; e.label.Color = Color3.fromRGB(0, 255, 80)
                             elseif hackerName then
                                 local nm = hackerName
                                 if #nm > 8 then nm = string.sub(nm, 1, 6) .. ".." end
-                                e.label.Text = labelText .. " (" .. nm .. ")"
-                                e.label.Color = espColor
+                                e.label.Text = labelText .. " (" .. nm .. ")"; e.label.Color = espColor
                             else
-                                e.label.Text = labelText .. " (IDLE)"
-                                e.label.Color = Color3.fromRGB(150, 150, 150)
+                                e.label.Text = labelText .. " (IDLE)"; e.label.Color = Color3.fromRGB(150, 150, 150)
                             end
-                            e.label.Position = Vector2.new(math.floor(sp.X), math.floor(by - 15))
-                            e.label.Visible = true
-                        else
-                            e.label.Visible = false
-                        end
-
+                            e.label.Position = Vector2.new(math.floor(sp.X), math.floor(by - 15)); e.label.Visible = true
+                        else e.label.Visible = false end
                         if State.show_player_progress then
                             local barY = by + h + 4
                             local barW = math.max(20, math.floor(w * (State.bar_width / 100)))
                             local barH = math.max(4, State.bar_height)
                             local barX = math.floor(sp.X - barW / 2)
-
-                            e.barBg.Position = Vector2.new(barX, barY)
-                            e.barBg.Size = Vector2.new(barW, barH)
-                            e.barBg.Color = Color3.fromRGB(20, 20, 25)
-                            e.barBg.Transparency = 0.2
-                            e.barBg.Visible = true
-
+                            e.barBg.Position = Vector2.new(barX, barY); e.barBg.Size = Vector2.new(barW, barH)
+                            e.barBg.Color = Color3.fromRGB(20, 20, 25); e.barBg.Transparency = 0.2; e.barBg.Visible = true
                             local fw = math.max(2, math.floor(barW * math.clamp(saved, 0, 1)))
                             local fc
                             if saved >= 0.95 then fc = Color3.fromRGB(0, 255, 50)
                             elseif saved > 0.5 then fc = Color3.fromRGB(255, 180, 0)
                             elseif saved > 0 then fc = Color3.fromRGB(255, 100, 100)
                             else fc = Color3.fromRGB(60, 60, 60) end
-                            e.barFill.Position = Vector2.new(barX, barY)
-                            e.barFill.Size = Vector2.new(fw, barH)
-                            e.barFill.Color = fc
-                            e.barFill.Transparency = 0.4
-                            e.barFill.Visible = true
-
-                            e.borderBar.Position = Vector2.new(barX - 1, barY - 1)
-                            e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
-                            e.borderBar.Color = Color3.fromRGB(255, 255, 255)
-                            e.borderBar.Transparency = 0.5
-                            e.borderBar.Thickness = 1
-                            e.borderBar.Visible = true
-
+                            e.barFill.Position = Vector2.new(barX, barY); e.barFill.Size = Vector2.new(fw, barH)
+                            e.barFill.Color = fc; e.barFill.Transparency = 0.4; e.barFill.Visible = true
+                            e.borderBar.Position = Vector2.new(barX - 1, barY - 1); e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
+                            e.borderBar.Color = Color3.fromRGB(255, 255, 255); e.borderBar.Transparency = 0.5
+                            e.borderBar.Thickness = 1; e.borderBar.Visible = true
                             local percentText
                             if saved >= 1 then percentText = "DONE"
                             else
@@ -1478,28 +1090,19 @@ local function UpdateComputerEsp()
                             e.percentLabel.Text = percentText
                             e.percentLabel.Position = Vector2.new(math.floor(sp.X), math.floor(barY + barH + 10))
                             e.percentLabel.Color = Color3.fromRGB(255, 255, 255)
-                            e.percentLabel.Size = 13
-                            e.percentLabel.Visible = true
+                            e.percentLabel.Size = 13; e.percentLabel.Visible = true
                         else
-                            e.barBg.Visible = false
-                            e.barFill.Visible = false
-                            e.percentLabel.Visible = false
-                            e.borderBar.Visible = false
+                            e.barBg.Visible = false; e.barFill.Visible = false
+                            e.percentLabel.Visible = false; e.borderBar.Visible = false
                         end
-                    else
-                        HideEspEntry(e)
-                    end
+                    else HideEspEntry(e) end
                 end
             end
         end
     end
-
     CleanupTrackedEspKeys("pc", seen)
 end
 
--- =====================================================================
--- FREEZE POD ESP
--- =====================================================================
 local function UpdateFreezePodEsp()
     if not State.freeze_pod_esp then
         for key, _ in pairs(ActiveEspKeys.fp or {}) do
@@ -1512,44 +1115,34 @@ local function UpdateFreezePodEsp()
     local cam = workspace.CurrentCamera
     local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
     local targets = FreezePodCache
-
     for i = 1, #targets do
         local part = targets[i]
         if part and part.Parent then
             local key = "fp:" .. tostring(i)
             local e = GetEspEntry(key)
             local pos = part.Position
-            seen[key] = true
-            ActiveEspKeys.fp[key] = true
-            if IsTooFar(camPos, pos) then
-                HideEspEntry(e)
+            seen[key] = true; ActiveEspKeys.fp[key] = true
+            if IsTooFar(camPos, pos) then HideEspEntry(e)
             else
                 local sp, vis = GetWorldToScreen(pos + Vector3.new(0, 1.5, 0))
                 if vis and sp then
                     e.box.Visible = false
                     e.label.Text = "FreezePod"
                     e.label.Position = Vector2.new(math.floor(sp.X), math.floor(sp.Y - 15))
-                    e.label.Color = Color3.fromRGB(0, 0, 245)
-                    e.label.Visible = true
+                    e.label.Color = Color3.fromRGB(0, 0, 245); e.label.Visible = true
                     e.barBg.Visible = false; e.barFill.Visible = false
                     e.percentLabel.Visible = false; e.borderBar.Visible = false
-                else
-                    HideEspEntry(e)
-                end
+                else HideEspEntry(e) end
             end
         end
     end
     CleanupTrackedEspKeys("fp", seen)
 end
 
--- =====================================================================
--- DOOR ESP
--- =====================================================================
 local function RenderDoorBucket(kind, bucketKey, targets, defaultColor, onlyOpen)
     local seen = {}
     local cam = workspace.CurrentCamera
     local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
-
     for i = 1, #targets do
         local entry = targets[i]
         local anchor = entry.anchor
@@ -1557,22 +1150,14 @@ local function RenderDoorBucket(kind, bucketKey, targets, defaultColor, onlyOpen
         if anchor and anchor.Parent then
             local key = bucketKey .. ":" .. tostring(i)
             local e = GetEspEntry(key)
-            seen[key] = true
-            ActiveEspKeys[bucketKey][key] = true
-
+            seen[key] = true; ActiveEspKeys[bucketKey][key] = true
             local pos = anchor.Position
-            if IsTooFar(camPos, pos) then
-                HideEspEntry(e)
+            if IsTooFar(camPos, pos) then HideEspEntry(e)
             else
                 local isOpen = false
-                if kind ~= "Doorway" then
-                    isOpen = IsDoorOpen(model)
-                end
-
+                if kind ~= "Doorway" then isOpen = IsDoorOpen(model) end
                 if onlyOpen and kind ~= "Doorway" and not isOpen then
-                    HideEspEntry(e)
-                    ActiveEspKeys[bucketKey][key] = nil
-                    seen[key] = nil
+                    HideEspEntry(e); ActiveEspKeys[bucketKey][key] = nil; seen[key] = nil
                 else
                     local sp, vis = GetWorldToScreen(pos + Vector3.new(0, 1.5, 0))
                     if vis and sp then
@@ -1581,42 +1166,24 @@ local function RenderDoorBucket(kind, bucketKey, targets, defaultColor, onlyOpen
                             color = ExitDoorColorCache[anchor] or defaultColor
                         end
                         if State.door_show_state and kind ~= "Doorway" then
-                            color = isOpen
-                                and Color3.fromRGB(80, 255, 120)
-                                or Color3.fromRGB(255, 80, 80)
+                            color = isOpen and Color3.fromRGB(80, 255, 120) or Color3.fromRGB(255, 80, 80)
                         end
-
                         local label = kind
                         if State.door_show_state and kind ~= "Doorway" then
                             label = label .. (isOpen and " [OPEN]" or " [CLOSED]")
                         end
-
                         if State.show_boxes then
                             e.box.Position = Vector2.new(math.floor(sp.X - 15), math.floor(sp.Y - 15))
-                            e.box.Size = Vector2.new(30, 30)
-                            e.box.Color = color
-                            e.box.Visible = true
-                        else
-                            e.box.Visible = false
-                        end
-
+                            e.box.Size = Vector2.new(30, 30); e.box.Color = color; e.box.Visible = true
+                        else e.box.Visible = false end
                         if State.show_labels then
                             e.label.Text = label
                             e.label.Position = Vector2.new(math.floor(sp.X), math.floor(sp.Y - 30))
-                            e.label.Color = color
-                            e.label.Size = 13
-                            e.label.Visible = true
-                        else
-                            e.label.Visible = false
-                        end
-
-                        e.barBg.Visible = false
-                        e.barFill.Visible = false
-                        e.percentLabel.Visible = false
-                        e.borderBar.Visible = false
-                    else
-                        HideEspEntry(e)
-                    end
+                            e.label.Color = color; e.label.Size = 13; e.label.Visible = true
+                        else e.label.Visible = false end
+                        e.barBg.Visible = false; e.barFill.Visible = false
+                        e.percentLabel.Visible = false; e.borderBar.Visible = false
+                    else HideEspEntry(e) end
                 end
             end
         end
@@ -1634,187 +1201,43 @@ local function UpdateDoorEsp()
         end
         return
     end
-
     local onlyOpen = State.door_only_open == true
-
     RenderDoorBucket("SingleDoor", "sd", DoorCache.sd, Color3.fromRGB(0, 220, 255), onlyOpen)
     RenderDoorBucket("DoubleDoor", "dd", DoorCache.dd, Color3.fromRGB(255, 140, 0), onlyOpen)
     RenderDoorBucket("Doorway",    "dw", DoorCache.dw, Color3.fromRGB(180, 100, 255), onlyOpen)
     RenderDoorBucket("ExitDoor",   "ed", DoorCache.ed, Color3.fromRGB(255, 255, 0), onlyOpen)
 end
 
--- =====================================================================
--- RIMURU UI TABS
--- =====================================================================
 local EspTab = UI:AddTab({ Title = "ESP", Icon = "script" })
 local BeastTab = UI:AddTab({ Title = "Beast", Icon = "script" })
 
-EspTab:AddToggle({
-    Id = "windy_player_esp",
-    Title = "Player ESP",
-    Default = false,
-    Callback = function(v) State.npc_player_esp = v end,
-})
+EspTab:AddToggle({ Id = "windy_player_esp", Title = "Player ESP", Default = false, Callback = function(v) State.npc_player_esp = v end })
+EspTab:AddToggle({ Id = "windy_beast_esp", Title = "Beast ESP", Default = false, Callback = function(v) State.npc_beast_esp = v end })
+EspTab:AddToggle({ Id = "windy_show_state", Title = "Show Player State", Default = true, Callback = function(v) State.player_show_state = v end })
+EspTab:AddToggle({ Id = "windy_state_colors", Title = "State Colors", Default = true, Callback = function(v) State.player_state_color = v end })
+EspTab:AddToggle({ Id = "windy_tracers", Title = "Player Tracers", Default = false, Callback = function(v) State.show_tracers = v end })
+EspTab:AddToggle({ Id = "windy_ragdoll_tracker", Title = "Ragdoll Tracker", Default = false, Callback = function(v) RagdollTracker.visible = v end })
+EspTab:AddToggle({ Id = "windy_pc_esp", Title = "PC ESP", Default = false, Callback = function(v) State.pc_esp = v end })
+EspTab:AddToggle({ Id = "windy_hide_done_pcs", Title = "Hide Completed PCs", Default = false, Callback = function(v) State.hide_completed_pcs = v end })
+EspTab:AddToggle({ Id = "windy_freeze_pod", Title = "Freeze Pod ESP", Default = false, Callback = function(v) State.freeze_pod_esp = v end })
+EspTab:AddToggle({ Id = "windy_door_esp", Title = "Door ESP", Default = false, Callback = function(v) State.exit_door_esp = v end })
+EspTab:AddToggle({ Id = "windy_only_open_doors", Title = "Only Show Open Doors", Default = false, Callback = function(v) State.door_only_open = v end })
+EspTab:AddToggle({ Id = "windy_door_state", Title = "Show Open/Closed State", Default = true, Callback = function(v) State.door_show_state = v end })
+EspTab:AddToggle({ Id = "windy_show_boxes", Title = "Show Boxes", Default = true, Callback = function(v) State.show_boxes = v end })
+EspTab:AddToggle({ Id = "windy_show_labels", Title = "Show Labels", Default = true, Callback = function(v) State.show_labels = v end })
+EspTab:AddToggle({ Id = "windy_show_distance", Title = "Show Distance", Default = false, Callback = function(v) State.show_distance = v end })
+EspTab:AddToggle({ Id = "windy_player_progress", Title = "Player Progress Bars", Default = true, Callback = function(v) State.show_player_progress = v end })
 
-EspTab:AddToggle({
-    Id = "windy_beast_esp",
-    Title = "Beast ESP",
-    Default = false,
-    Callback = function(v) State.npc_beast_esp = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_show_state",
-    Title = "Show Player State",
-    Default = true,
-    Callback = function(v) State.player_show_state = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_state_colors",
-    Title = "State Colors",
-    Default = true,
-    Callback = function(v) State.player_state_color = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_tracers",
-    Title = "Player Tracers",
-    Default = false,
-    Callback = function(v) State.show_tracers = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_ragdoll_tracker",
-    Title = "Ragdoll Tracker",
-    Default = false,
-    Callback = function(v) RagdollTracker.visible = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_pc_esp",
-    Title = "PC ESP",
-    Default = false,
-    Callback = function(v) State.pc_esp = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_hide_done_pcs",
-    Title = "Hide Completed PCs",
-    Default = false,
-    Callback = function(v) State.hide_completed_pcs = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_freeze_pod",
-    Title = "Freeze Pod ESP",
-    Default = false,
-    Callback = function(v) State.freeze_pod_esp = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_door_esp",
-    Title = "Door ESP",
-    Default = false,
-    Callback = function(v) State.exit_door_esp = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_only_open_doors",
-    Title = "Only Show Open Doors",
-    Default = false,
-    Callback = function(v) State.door_only_open = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_door_state",
-    Title = "Show Open/Closed State",
-    Default = true,
-    Callback = function(v) State.door_show_state = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_show_boxes",
-    Title = "Show Boxes",
-    Default = true,
-    Callback = function(v) State.show_boxes = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_show_labels",
-    Title = "Show Labels",
-    Default = true,
-    Callback = function(v) State.show_labels = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_show_distance",
-    Title = "Show Distance",
-    Default = false,
-    Callback = function(v) State.show_distance = v end,
-})
-
-EspTab:AddToggle({
-    Id = "windy_player_progress",
-    Title = "Player Progress Bars",
-    Default = true,
-    Callback = function(v) State.show_player_progress = v end,
-})
-
-BeastTab:AddToggle({
-    Id = "windy_power_name",
-    Title = "Power Name",
-    Default = true,
-    Callback = function(v) State.show_power_name = v end,
-})
-
-BeastTab:AddToggle({
-    Id = "windy_power_bar",
-    Title = "Power Bar",
-    Default = true,
-    Callback = function(v) State.show_power_bar = v end,
-})
-
-BeastTab:AddToggle({
-    Id = "windy_power_percent",
-    Title = "Power Percent",
-    Default = true,
-    Callback = function(v) State.show_power_percent = v end,
-})
-
-BeastTab:AddToggle({
-    Id = "windy_beast_label",
-    Title = "Beast Label",
-    Default = true,
-    Callback = function(v) State.show_beast_label = v end,
-})
-
-BeastTab:AddSlider({
-    Id = "windy_bar_height",
-    Title = "Bar Height",
-    Min = 3, Max = 12, Step = 1, Default = 6,
-    Callback = function(v) State.bar_height = v end,
-})
-
-BeastTab:AddSlider({
-    Id = "windy_bar_width",
-    Title = "Bar Width",
-    Min = 80, Max = 150, Step = 5, Default = 100,
-    Callback = function(v) State.bar_width = v end,
-})
-
-BeastTab:AddSlider({
-    Id = "windy_power_font",
-    Title = "Power Font Size",
-    Min = 10, Max = 24, Step = 1, Default = 16,
-    Callback = function(v) State.power_font_size = v end,
-})
+BeastTab:AddToggle({ Id = "windy_power_name", Title = "Power Name", Default = true, Callback = function(v) State.show_power_name = v end })
+BeastTab:AddToggle({ Id = "windy_power_bar", Title = "Power Bar", Default = true, Callback = function(v) State.show_power_bar = v end })
+BeastTab:AddToggle({ Id = "windy_power_percent", Title = "Power Percent", Default = true, Callback = function(v) State.show_power_percent = v end })
+BeastTab:AddToggle({ Id = "windy_beast_label", Title = "Beast Label", Default = true, Callback = function(v) State.show_beast_label = v end })
+BeastTab:AddSlider({ Id = "windy_bar_height", Title = "Bar Height", Min = 3, Max = 12, Step = 1, Default = 6, Callback = function(v) State.bar_height = v end })
+BeastTab:AddSlider({ Id = "windy_bar_width", Title = "Bar Width", Min = 80, Max = 150, Step = 5, Default = 100, Callback = function(v) State.bar_width = v end })
+BeastTab:AddSlider({ Id = "windy_power_font", Title = "Power Font Size", Min = 10, Max = 24, Step = 1, Default = 16, Callback = function(v) State.power_font_size = v end })
 
 EspTab:Select()
 
--- =====================================================================
--- MAIN LOOP
--- =====================================================================
 local LastFrameTick = 0
 local MinUpdateDelta = 1 / 60
 
@@ -1825,22 +1248,16 @@ RunService.RenderStepped:Connect(function(dt)
     if lastTick > 0 and (now - lastTick) < MinUpdateDelta then return end
     if lastTick > 0 then dt = now - lastTick end
     LastFrameTick = now
-
     pcall(CheckForMapChange)
     pcall(PollRagdollTracker)
     pcall(RenderRagdollTracker)
-
     pcall(function()
         if State.npc_player_esp or State.npc_beast_esp or State.show_tracers
             or next(ActiveEspKeys.npc) ~= nil or next(ActiveTracerKeys) ~= nil then
             UpdateNpcEsp()
         end
-        if State.pc_esp or next(ActiveEspKeys.pc) ~= nil then
-            UpdateComputerEsp()
-        end
-        if State.freeze_pod_esp or next(ActiveEspKeys.fp) ~= nil then
-            UpdateFreezePodEsp()
-        end
+        if State.pc_esp or next(ActiveEspKeys.pc) ~= nil then UpdateComputerEsp() end
+        if State.freeze_pod_esp or next(ActiveEspKeys.fp) ~= nil then UpdateFreezePodEsp() end
         if State.exit_door_esp or next(ActiveEspKeys.sd) ~= nil or next(ActiveEspKeys.dd) ~= nil or next(ActiveEspKeys.dw) ~= nil or next(ActiveEspKeys.ed) ~= nil then
             UpdateDoorEsp()
         end
@@ -1849,7 +1266,6 @@ end)
 
 UI:Notify({
     Title = "Windy ESP v1.9",
-    Content = "Loaded. Rimuru UI active.",
+    Content = "Loaded. Rimuru framework active.",
     Type = "success",
     Duration = 4,
-})
