@@ -1,8 +1,6 @@
--- Windy ESP — Rimuru UI Edition v1.9.3
+-- Windy ESP — Rimuru UI Edition v1.9.6 (OPTIMIZED - Door/Freeze Pod lag fixes)
 -- For Windy Bee Simulator / FTF
--- Loads the rimuru framework from kherbyy/rem-ui.
--- v1.9.1: Full cleanup on disable (no memory leak).
--- v1.9.3: Bars restored on Player / PC / Ragdoll.
+-- v1.9.6: Full optimization - Door ESP & Freeze Pod ESP no longer lag
 
 local RIM_URL = "https://raw.githubusercontent.com/kherbyy/rem-ui/main/rem.lua"
 local UI = _G.Rimuru or _G.Rem
@@ -403,11 +401,10 @@ local function PollRagdollTracker()
     end
 end
 
--- Ragdoll Tracker: 5 objects per entry (panel + name + % + bar bg + bar fill)
 local function EnsureTrackerSlot(idx)
-    while #RagdollTracker.drawn < idx + 4 do
+    while #RagdollTracker.drawn < idx + 5 do
         local cur = #RagdollTracker.drawn + 1
-        local slotInGroup = (cur - 1) % 5
+        local slotInGroup = (cur - 1) % 6
         local obj
         if slotInGroup == 0 then
             obj = Drawing.new("Square"); obj.Filled = false; obj.Thickness = 1
@@ -419,11 +416,14 @@ local function EnsureTrackerSlot(idx)
             obj = Drawing.new("Text"); obj.Center = false; obj.Outline = true; obj.Font = 2
             obj.Size = 14; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 7
         elseif slotInGroup == 3 then
-            obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.0
-            obj.Color = Color3.fromRGB(70, 70, 80); obj.ZIndex = 5
+            obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.2
+            obj.Color = Color3.fromRGB(20, 20, 25); obj.ZIndex = 0
+        elseif slotInGroup == 4 then
+            obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.4
+            obj.Color = Color3.fromRGB(255, 180, 0); obj.ZIndex = 1
         else
-            obj = Drawing.new("Square"); obj.Filled = true; obj.Transparency = 0.0
-            obj.Color = Color3.fromRGB(255, 60, 60); obj.ZIndex = 6
+            obj = Drawing.new("Square"); obj.Filled = false; obj.Thickness = 1
+            obj.Transparency = 0.5; obj.Color = Color3.fromRGB(255, 255, 255); obj.ZIndex = 0
         end
         obj.Visible = false
         table.insert(RagdollTracker.drawn, obj)
@@ -450,12 +450,12 @@ local function RenderRagdollTracker()
     local vpSize = (cam and cam.ViewportSize) or Vector2.new(1920, 1080)
     local xStart = 20
     local yStart = math.floor(vpSize.Y * 0.35)
-    local lineHeight = 44
+    local lineHeight = 45
     local panelW = 280
-    local panelH = 40
+    local panelH = 26
     for i = 1, #entries do
         local entry = entries[i]
-        local baseIdx = (i - 1) * 5 + 1
+        local baseIdx = (i - 1) * 6 + 1
         local y = yStart + (i - 1) * lineHeight
         EnsureTrackerSlot(baseIdx)
         local bg = RagdollTracker.drawn[baseIdx]
@@ -463,8 +463,9 @@ local function RenderRagdollTracker()
         local pctText = RagdollTracker.drawn[baseIdx + 2]
         local barBg = RagdollTracker.drawn[baseIdx + 3]
         local barFill = RagdollTracker.drawn[baseIdx + 4]
+        local borderBar = RagdollTracker.drawn[baseIdx + 5]
         bg.ZIndex = 0; nameText.ZIndex = 7; pctText.ZIndex = 7
-        barBg.ZIndex = 5; barFill.ZIndex = 6
+        barBg.ZIndex = 0; barFill.ZIndex = 1; borderBar.ZIndex = 0
         local p = math.clamp(entry.progress or 0, 0, 1)
         local r, g, b
         if p < 0.5 then
@@ -492,26 +493,43 @@ local function RenderRagdollTracker()
         local stateLabel = entry.reason
         if p >= 0.9 then stateLabel = entry.reason .. " (ALMOST UP)" end
         nameText.Text = "[" .. stateLabel .. "] " .. entry.name
-        nameText.Position = Vector2.new(xStart + 8, y + 6)
+        nameText.Position = Vector2.new(xStart + 8, y + 5)
         nameText.Color = labelColor
         nameText.Visible = true
         pctText.Text = string.format("%.0f%%", p * 100)
-        pctText.Position = Vector2.new(xStart + panelW - 52, y + 8)
+        pctText.Position = Vector2.new(xStart + panelW - 52, y + 6)
         pctText.Color = labelColor
         pctText.Visible = true
-        local barW = panelW - 16
+        
+        local barY = y + panelH + 4
+        local barW = 260
         local barH = 8
-        local barX = xStart + 8
-        local barY = y + panelH - 12
-        barBg.Position = Vector2.new(barX, barY); barBg.Size = Vector2.new(barW, barH)
-        barBg.Color = Color3.fromRGB(70, 70, 80); barBg.Transparency = 0.0
-        barBg.Filled = true; barBg.Visible = true
-        local fillW = math.max(4, math.floor(barW * p))
-        barFill.Position = Vector2.new(barX, barY); barFill.Size = Vector2.new(fillW, barH)
-        barFill.Color = labelColor; barFill.Transparency = 0.0
-        barFill.Filled = true; barFill.Visible = true
+        local barX = xStart + 10
+        
+        barBg.Position = Vector2.new(barX, barY)
+        barBg.Size = Vector2.new(barW, barH)
+        barBg.Color = Color3.fromRGB(20, 20, 25)
+        barBg.Transparency = 0.2
+        barBg.Filled = true
+        barBg.Visible = true
+        
+        local fillW = math.max(2, math.floor(barW * p))
+        barFill.Position = Vector2.new(barX, barY)
+        barFill.Size = Vector2.new(fillW, barH)
+        barFill.Color = labelColor
+        barFill.Transparency = 0.4
+        barFill.Filled = true
+        barFill.Visible = true
+        
+        borderBar.Position = Vector2.new(barX - 1, barY - 1)
+        borderBar.Size = Vector2.new(barW + 2, barH + 2)
+        borderBar.Color = Color3.fromRGB(255, 255, 255)
+        borderBar.Transparency = 0.5
+        borderBar.Thickness = 1
+        borderBar.Filled = false
+        borderBar.Visible = true
     end
-    local usedSlots = #entries * 5
+    local usedSlots = #entries * 6
     for i = usedSlots + 1, #RagdollTracker.drawn do RagdollTracker.drawn[i].Visible = false end
 end
 
@@ -700,28 +718,47 @@ end
 
 local function GetFtfCharacterTargets() return RefreshFtfCharacterCache(false) end
 
-local DOOR_OPEN_DISPLACE = 0.3
-local DOOR_STATE_INTERVAL = 0.05
+-- ============================================================================
+-- OPTIMIZED DOOR ESP - v1.9.6
+-- ============================================================================
+local DOOR_STATE_INTERVAL = 0.3  -- OPTIMIZED: was 0.05 (6x less calculation)
+local DoorUpdateCounter = 0
+local DOOR_UPDATE_INTERVAL = 4  -- OPTIMIZED: only update doors every 4 frames
 
 local function GetDoorSlabParts(model)
     local cached = DoorSlabParts[model]
-    if cached and #cached > 0 and cached[1].Parent then return cached end
+    if cached and #cached > 0 then
+        local stillValid = true
+        for _, part in ipairs(cached) do
+            if not part.Parent then stillValid = false; break end
+        end
+        if stillValid then return cached end
+    end
+    
     local parts = {}
     for _, slabName in ipairs({ "Door", "DoorR", "DoorL" }) do
         local slab = model:FindFirstChild(slabName)
         if slab then
-            for _, child in ipairs(slab:GetDescendants()) do
-                if IsRealPart(child) then table.insert(parts, child) end
+            for _, child in ipairs(slab:GetChildren()) do
+                if child:IsA("BasePart") then table.insert(parts, child) end
             end
         end
     end
-    if #parts == 0 then
-        local EXCLUDE = { DoorTrigger = true, ExitDoorTrigger = true, ExitArea = true,
-            Frame = true, Light = true, Hinge = true, DoorBarrier = true }
-        for _, child in ipairs(model:GetDescendants()) do
-            if IsRealPart(child) and not EXCLUDE[child.Name] then table.insert(parts, child) end
+    
+    if #parts > 0 then
+        DoorSlabParts[model] = parts
+        return parts
+    end
+    
+    for _, child in ipairs(model:GetDescendants()) do
+        if child:IsA("BasePart") then
+            local ignore = { DoorTrigger = true, ExitDoorTrigger = true, ExitArea = true,
+                Frame = true, Light = true, Hinge = true, DoorBarrier = true }
+            if not ignore[child.Name] then table.insert(parts, child) end
+            if #parts >= 8 then break  end
         end
     end
+    
     DoorSlabParts[model] = parts
     return parts
 end
@@ -729,14 +766,13 @@ end
 local function AveragePosition(parts)
     if #parts == 0 then return nil end
     local sumX, sumY, sumZ, n = 0, 0, 0, 0
-    for _, part in ipairs(parts) do
-        local ok, pos = pcall(function() return part.Position end)
-        if ok and pos then
-            local okX, x = pcall(function() return pos.X end)
-            local okY, y = pcall(function() return pos.Y end)
-            local okZ, z = pcall(function() return pos.Z end)
-            if okX and okY and okZ and type(x) == "number" then
-                sumX = sumX + x; sumY = sumY + y; sumZ = sumZ + z; n = n + 1
+    local limit = math.min(#parts, 8)
+    for i = 1, limit do
+        local part = parts[i]
+        if part.Parent then
+            local ok, pos = pcall(function() return part.Position end)
+            if ok then
+                sumX = sumX + pos.X; sumY = sumY + pos.Y; sumZ = sumZ + pos.Z; n = n + 1
             end
         end
     end
@@ -744,30 +780,211 @@ local function AveragePosition(parts)
     return { X = sumX / n, Y = sumY / n, Z = sumZ / n }
 end
 
-local function IsDoorOpen(model)
-    if not model then return false end
+local function IsDoorOpen(model, camPos)
+    if not model or not model.Parent then return false end
+    
+    local anchor = nil
+    pcall(function()
+        for _, name in ipairs({ "DoorTrigger", "ExitDoorTrigger" }) do
+            local t = model:FindFirstChild(name)
+            if t and t:IsA("BasePart") then anchor = t; break end
+        end
+    end)
+    
+    if anchor and (anchor.Position - camPos).Magnitude > 6500 then
+        return false
+    end
+    
     local now = tick()
     local cached = DoorStateCache[model]
-    if cached and (now - cached.t) < DOOR_STATE_INTERVAL then return cached.open end
+    if cached and (now - cached.t) < DOOR_STATE_INTERVAL then
+        return cached.open
+    end
+    
     local parts = GetDoorSlabParts(model)
-    if #parts == 0 then DoorStateCache[model] = { open = false, t = now }; return false end
+    if #parts == 0 then
+        DoorStateCache[model] = { open = false, t = now }
+        return false
+    end
+    
     local avgPos = AveragePosition(parts)
-    if not avgPos then DoorStateCache[model] = { open = false, t = now }; return false end
+    if not avgPos then
+        DoorStateCache[model] = { open = false, t = now }
+        return false
+    end
+    
     local baseline = DoorBaselinePos[model]
     if not baseline then
         DoorBaselinePos[model] = avgPos
         DoorStateCache[model] = { open = false, t = now }
         return false
     end
+    
     local dx = avgPos.X - baseline.X
     local dy = avgPos.Y - baseline.Y
     local dz = avgPos.Z - baseline.Z
     local dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-    local isOpen = dist > DOOR_OPEN_DISPLACE
+    local isOpen = dist > 0.3
     DoorStateCache[model] = { open = isOpen, t = now }
     return isOpen
 end
 
+local function UpdateFreezePodEsp()
+    if not State.freeze_pod_esp then
+        FullCleanupBucket("fp")
+        return
+    end
+    
+    local seen = {}
+    local cam = workspace.CurrentCamera
+    local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
+    local targets = FreezePodCache
+    
+    for i = 1, #targets do
+        local part = targets[i]
+        if part and part.Parent then
+            local key = "fp:" .. tostring(i)
+            local pos = part.Position
+            
+            if IsTooFar(camPos, pos) then
+                local e = EspObjects[key]
+                if e then HideEspEntry(e) end
+                ActiveEspKeys.fp[key] = nil
+            else
+                local sp, vis = GetWorldToScreen(pos + Vector3.new(0, 1.5, 0))
+                seen[key] = true
+                ActiveEspKeys.fp[key] = true
+                
+                if vis and sp then
+                    local e = GetEspEntry(key)
+                    e.box.Visible = false
+                    e.label.Text = "FreezePod"
+                    e.label.Position = Vector2.new(math.floor(sp.X), math.floor(sp.Y - 15))
+                    e.label.Color = Color3.fromRGB(0, 0, 245)
+                    e.label.Visible = true
+                    e.barBg.Visible = false
+                    e.barFill.Visible = false
+                    e.percentLabel.Visible = false
+                    e.borderBar.Visible = false
+                else
+                    local e = EspObjects[key]
+                    if e then HideEspEntry(e) end
+                end
+            end
+        end
+    end
+    
+    CleanupTrackedEspKeys("fp", seen)
+end
+
+local function RenderDoorBucket(kind, bucketKey, targets, defaultColor, onlyOpen)
+    DoorUpdateCounter = DoorUpdateCounter + 1
+    if DoorUpdateCounter % DOOR_UPDATE_INTERVAL ~= 0 then
+        return
+    end
+    
+    local seen = {}
+    local cam = workspace.CurrentCamera
+    local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
+    
+    for i = 1, #targets do
+        local entry = targets[i]
+        local anchor = entry.anchor
+        local model = entry.model
+        
+        if anchor and anchor.Parent then
+            local pos = anchor.Position
+            local key = bucketKey .. ":" .. tostring(i)
+            
+            if IsTooFar(camPos, pos) then
+                local e = EspObjects[key]
+                if e then HideEspEntry(e) end
+                ActiveEspKeys[bucketKey][key] = nil
+            else
+                local isOpen = false
+                if kind ~= "Doorway" then
+                    isOpen = IsDoorOpen(model, camPos)
+                end
+                
+                if onlyOpen and kind ~= "Doorway" and not isOpen then
+                    local e = EspObjects[key]
+                    if e then HideEspEntry(e) end
+                    ActiveEspKeys[bucketKey][key] = nil
+                else
+                    local sp, vis = GetWorldToScreen(pos + Vector3.new(0, 1.5, 0))
+                    seen[key] = true
+                    ActiveEspKeys[bucketKey][key] = true
+                    
+                    if vis and sp then
+                        local e = GetEspEntry(key)
+                        local color = defaultColor
+                        
+                        if kind == "ExitDoor" and not State.door_show_state then
+                            color = ExitDoorColorCache[anchor] or defaultColor
+                        end
+                        
+                        if State.door_show_state and kind ~= "Doorway" then
+                            color = isOpen and Color3.fromRGB(80, 255, 120) or Color3.fromRGB(255, 80, 80)
+                        end
+                        
+                        local label = kind
+                        if State.door_show_state and kind ~= "Doorway" then
+                            label = label .. (isOpen and " [OPEN]" or " [CLOSED]")
+                        end
+                        
+                        if State.show_boxes then
+                            e.box.Position = Vector2.new(math.floor(sp.X - 15), math.floor(sp.Y - 15))
+                            e.box.Size = Vector2.new(30, 30)
+                            e.box.Color = color
+                            e.box.Visible = true
+                        else
+                            e.box.Visible = false
+                        end
+                        
+                        if State.show_labels then
+                            e.label.Text = label
+                            e.label.Position = Vector2.new(math.floor(sp.X), math.floor(sp.Y - 30))
+                            e.label.Color = color
+                            e.label.Size = 13
+                            e.label.Visible = true
+                        else
+                            e.label.Visible = false
+                        end
+                        
+                        e.barBg.Visible = false
+                        e.barFill.Visible = false
+                        e.percentLabel.Visible = false
+                        e.borderBar.Visible = false
+                    else
+                        local e = EspObjects[key]
+                        if e then HideEspEntry(e) end
+                    end
+                end
+            end
+        end
+    end
+    
+    CleanupTrackedEspKeys(bucketKey, seen)
+end
+
+local function UpdateDoorEsp()
+    if not State.exit_door_esp then
+        for _, key in ipairs({ "sd", "dd", "dw", "ed" }) do
+            FullCleanupBucket(key)
+        end
+        return
+    end
+    
+    local onlyOpen = State.door_only_open == true
+    RenderDoorBucket("SingleDoor", "sd", DoorCache.sd, Color3.fromRGB(0, 220, 255), onlyOpen)
+    RenderDoorBucket("DoubleDoor", "dd", DoorCache.dd, Color3.fromRGB(255, 140, 0), onlyOpen)
+    RenderDoorBucket("Doorway",    "dw", DoorCache.dw, Color3.fromRGB(180, 100, 255), onlyOpen)
+    RenderDoorBucket("ExitDoor",   "ed", DoorCache.ed, Color3.fromRGB(255, 255, 0), onlyOpen)
+end
+
+-- ============================================================================
+-- NPC ESP
+-- ============================================================================
 local function UpdateNpcEsp()
     local playerEspEnabled = State.npc_player_esp
     local beastEspEnabled = State.npc_beast_esp
@@ -881,7 +1098,6 @@ local function UpdateNpcEsp()
                                         e.percentLabel.Visible = false; e.borderBar.Visible = false
                                     end
                                 else
-                                    -- PLAYER: label + bar + % underneath
                                     local player = meta.player
                                     local playerProgress = player and GetPlayerProgress(player) or 0
                                     if State.show_labels then
@@ -903,30 +1119,43 @@ local function UpdateNpcEsp()
                                         e.label.Size = 14; e.label.Visible = true
                                     else e.label.Visible = false end
                                     if State.show_player_progress then
-                                        local barY = by + bh + 4
-                                        local barW = math.max(20, math.floor(bw * 1.2))
-                                        local barH = math.max(4, State.bar_height)
-                                        local barX = math.floor(hp.X - barW / 2)
-                                        e.barBg.Position = Vector2.new(barX, barY); e.barBg.Size = Vector2.new(barW, barH)
-                                        e.barBg.Color = Color3.fromRGB(20, 20, 25); e.barBg.Transparency = 0.2; e.barBg.Visible = true
-                                        local fw = math.max(2, math.floor(barW * math.clamp(playerProgress, 0, 1)))
-                                        local fc
-                                        if playerProgress >= 0.95 then fc = Color3.fromRGB(0,255,50)
-                                        elseif playerProgress > 0.5 then fc = Color3.fromRGB(255,180,0)
-                                        elseif playerProgress > 0 then fc = Color3.fromRGB(255,100,100)
-                                        else fc = Color3.fromRGB(60,60,60); fw = 2 end
-                                        e.barFill.Position = Vector2.new(barX, barY); e.barFill.Size = Vector2.new(fw, barH)
-                                        e.barFill.Color = fc; e.barFill.Transparency = 0.4; e.barFill.Visible = true
-                                        e.borderBar.Position = Vector2.new(barX - 1, barY - 1); e.borderBar.Size = Vector2.new(barW + 2, barH + 2)
-                                        e.borderBar.Color = Color3.fromRGB(255, 255, 255); e.borderBar.Transparency = 0.5
-                                        e.borderBar.Thickness = 1; e.borderBar.Visible = true
-                                        e.percentLabel.Text = (playerProgress >= 1) and "DONE" or string.format("%.0f%%", playerProgress * 100)
-                                        e.percentLabel.Position = Vector2.new(math.floor(hp.X), math.floor(barY + barH + 10))
-                                        e.percentLabel.Color = playerProgress > 0 and Color3.fromRGB(255,255,255) or Color3.fromRGB(100,100,100)
-                                        e.percentLabel.Size = 13; e.percentLabel.Visible = true
+                                        local pBarY = by + bh + 4
+                                        local pBarW = math.max(20, math.floor(bw * 1.2))
+                                        local pBarH = math.max(4, State.bar_height)
+                                        local pBarX = math.floor(hp.X - pBarW / 2)
+                                        local pProg = math.clamp(playerProgress, 0, 1)
+                                        e.barBg.Position = Vector2.new(pBarX, pBarY)
+                                        e.barBg.Size = Vector2.new(pBarW, pBarH)
+                                        e.barBg.Color = Color3.fromRGB(20, 20, 25)
+                                        e.barBg.Transparency = 0.2
+                                        e.barBg.Visible = true
+                                        local pFill = math.max(2, math.floor(pBarW * pProg))
+                                        local pCol
+                                        if pProg >= 0.95 then pCol = Color3.fromRGB(0, 255, 50)
+                                        elseif pProg > 0.5 then pCol = Color3.fromRGB(255, 180, 0)
+                                        elseif pProg > 0 then pCol = Color3.fromRGB(255, 100, 100)
+                                        else pCol = Color3.fromRGB(60, 60, 60); pFill = 2 end
+                                        e.barFill.Position = Vector2.new(pBarX, pBarY)
+                                        e.barFill.Size = Vector2.new(pFill, pBarH)
+                                        e.barFill.Color = pCol
+                                        e.barFill.Transparency = 0.4
+                                        e.barFill.Visible = true
+                                        e.borderBar.Position = Vector2.new(pBarX - 1, pBarY - 1)
+                                        e.borderBar.Size = Vector2.new(pBarW + 2, pBarH + 2)
+                                        e.borderBar.Color = Color3.fromRGB(255, 255, 255)
+                                        e.borderBar.Transparency = 0.5
+                                        e.borderBar.Thickness = 1
+                                        e.borderBar.Visible = true
+                                        e.percentLabel.Text = (pProg >= 1) and "DONE" or string.format("%.0f%%", pProg * 100)
+                                        e.percentLabel.Position = Vector2.new(math.floor(hp.X), math.floor(pBarY + pBarH + 10))
+                                        e.percentLabel.Color = pProg > 0 and Color3.fromRGB(255,255,255) or Color3.fromRGB(100,100,100)
+                                        e.percentLabel.Size = 13
+                                        e.percentLabel.Visible = true
                                     else
-                                        e.barBg.Visible = false; e.barFill.Visible = false
-                                        e.percentLabel.Visible = false; e.borderBar.Visible = false
+                                        e.barBg.Visible = false
+                                        e.barFill.Visible = false
+                                        e.percentLabel.Visible = false
+                                        e.borderBar.Visible = false
                                     end
                                 end
                             else
@@ -970,6 +1199,9 @@ local function UpdateNpcEsp()
     end
 end
 
+-- ============================================================================
+-- COMPUTER ESP
+-- ============================================================================
 local function GetComputerProgressKey(trigger)
     if not trigger then return nil end
     local addr = nil; pcall(function() addr = trigger.Address end)
@@ -1068,7 +1300,6 @@ local function UpdateComputerEsp()
                         local hackerName = currentHackerName or lastHacker
                         e.box.Position = Vector2.new(bx, by); e.box.Size = Vector2.new(w, h)
                         e.box.Color = espColor; e.box.Visible = true
-                        -- PC: label + bar + % underneath
                         if State.show_labels then
                             if screenState == "done" then
                                 e.label.Text = "PC (HACKED)"; e.label.Color = Color3.fromRGB(0, 255, 80)
@@ -1126,105 +1357,9 @@ local function UpdateComputerEsp()
     CleanupTrackedEspKeys("pc", seen)
 end
 
-local function UpdateFreezePodEsp()
-    if not State.freeze_pod_esp then
-        FullCleanupBucket("fp")
-        return
-    end
-    local seen = {}
-    local cam = workspace.CurrentCamera
-    local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
-    local targets = FreezePodCache
-    for i = 1, #targets do
-        local part = targets[i]
-        if part and part.Parent then
-            local key = "fp:" .. tostring(i)
-            local e = GetEspEntry(key)
-            local pos = part.Position
-            seen[key] = true; ActiveEspKeys.fp[key] = true
-            if IsTooFar(camPos, pos) then HideEspEntry(e)
-            else
-                local sp, vis = GetWorldToScreen(pos + Vector3.new(0, 1.5, 0))
-                if vis and sp then
-                    e.box.Visible = false
-                    e.label.Text = "FreezePod"
-                    e.label.Position = Vector2.new(math.floor(sp.X), math.floor(sp.Y - 15))
-                    e.label.Color = Color3.fromRGB(0, 0, 245); e.label.Visible = true
-                    e.barBg.Visible = false; e.barFill.Visible = false
-                    e.percentLabel.Visible = false; e.borderBar.Visible = false
-                else HideEspEntry(e) end
-            end
-        end
-    end
-    CleanupTrackedEspKeys("fp", seen)
-end
-
-local function RenderDoorBucket(kind, bucketKey, targets, defaultColor, onlyOpen)
-    local seen = {}
-    local cam = workspace.CurrentCamera
-    local camPos = cam and cam.CFrame.Position or Vector3.new(0, 0, 0)
-    for i = 1, #targets do
-        local entry = targets[i]
-        local anchor = entry.anchor
-        local model = entry.model
-        if anchor and anchor.Parent then
-            local key = bucketKey .. ":" .. tostring(i)
-            local e = GetEspEntry(key)
-            seen[key] = true; ActiveEspKeys[bucketKey][key] = true
-            local pos = anchor.Position
-            if IsTooFar(camPos, pos) then HideEspEntry(e)
-            else
-                local isOpen = false
-                if kind ~= "Doorway" then isOpen = IsDoorOpen(model) end
-                if onlyOpen and kind ~= "Doorway" and not isOpen then
-                    HideEspEntry(e); ActiveEspKeys[bucketKey][key] = nil; seen[key] = nil
-                else
-                    local sp, vis = GetWorldToScreen(pos + Vector3.new(0, 1.5, 0))
-                    if vis and sp then
-                        local color = defaultColor
-                        if kind == "ExitDoor" and not State.door_show_state then
-                            color = ExitDoorColorCache[anchor] or defaultColor
-                        end
-                        if State.door_show_state and kind ~= "Doorway" then
-                            color = isOpen and Color3.fromRGB(80, 255, 120) or Color3.fromRGB(255, 80, 80)
-                        end
-                        local label = kind
-                        if State.door_show_state and kind ~= "Doorway" then
-                            label = label .. (isOpen and " [OPEN]" or " [CLOSED]")
-                        end
-                        if State.show_boxes then
-                            e.box.Position = Vector2.new(math.floor(sp.X - 15), math.floor(sp.Y - 15))
-                            e.box.Size = Vector2.new(30, 30); e.box.Color = color; e.box.Visible = true
-                        else e.box.Visible = false end
-                        if State.show_labels then
-                            e.label.Text = label
-                            e.label.Position = Vector2.new(math.floor(sp.X), math.floor(sp.Y - 30))
-                            e.label.Color = color; e.label.Size = 13; e.label.Visible = true
-                        else e.label.Visible = false end
-                        e.barBg.Visible = false; e.barFill.Visible = false
-                        e.percentLabel.Visible = false; e.borderBar.Visible = false
-                    else HideEspEntry(e) end
-                end
-            end
-        end
-    end
-    CleanupTrackedEspKeys(bucketKey, seen)
-end
-
-local function UpdateDoorEsp()
-    if not State.exit_door_esp then
-        for _, key in ipairs({ "sd", "dd", "dw", "ed" }) do
-            FullCleanupBucket(key)
-        end
-        return
-    end
-    local onlyOpen = State.door_only_open == true
-    RenderDoorBucket("SingleDoor", "sd", DoorCache.sd, Color3.fromRGB(0, 220, 255), onlyOpen)
-    RenderDoorBucket("DoubleDoor", "dd", DoorCache.dd, Color3.fromRGB(255, 140, 0), onlyOpen)
-    RenderDoorBucket("Doorway",    "dw", DoorCache.dw, Color3.fromRGB(180, 100, 255), onlyOpen)
-    RenderDoorBucket("ExitDoor",   "ed", DoorCache.ed, Color3.fromRGB(255, 255, 0), onlyOpen)
-end
-
+-- ============================================================================
+-- UI SETUP
+-- ============================================================================
 local EspTab = UI:AddTab({ Title = "ESP", Icon = "script" })
 local BeastTab = UI:AddTab({ Title = "Beast", Icon = "script" })
 
@@ -1308,8 +1443,8 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 UI:Notify({
-    Title = "Windy ESP v1.9.3",
-    Content = "Loaded. Bars restored.",
+    Title = "Windy ESP v1.9.6 OPTIMIZED",
+    Content = "Loaded! Door & Freeze Pod lag FIXED ⚡",
     Type = "success",
     Duration = 4,
 })
