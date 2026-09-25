@@ -1269,3 +1269,4 @@ UI:Notify({
     Content = "Loaded. Rimuru framework active.",
     Type = "success",
     Duration = 4,
+})
